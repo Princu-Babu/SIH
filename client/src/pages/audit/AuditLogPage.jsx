@@ -15,73 +15,15 @@ export default function AuditLogPage() {
   const { data: auditLogs, isLoading } = useQuery({
     queryKey: ['audit-logs'],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get('/audit');
-        return Array.isArray(res.data) ? res.data : res.data.logs || [];
-      } catch {
-        return [
-          {
-            id: 'log-1',
-            timestamp: '2026-08-30T10:45:12Z',
-            userName: 'Shri Rajesh Kumar',
-            userRole: 'ADMIN',
-            action: 'LOGIN',
-            entityType: 'AUTH',
-            entityId: 'u-1',
-            details: 'Officer authenticated successfully from Delhi State Network',
-            ipAddress: '10.24.110.45',
-            hash: '4a8f9038234857bfe42398471239857129384751928347192384719238471293',
-          },
-          {
-            id: 'log-2',
-            timestamp: '2026-08-28T12:00:00Z',
-            userName: 'Shri R. K. Sharma',
-            userRole: 'INSPECTOR',
-            action: 'FINALIZE_TEST_SESSION',
-            entityType: 'TEST_SESSION',
-            entityId: 'session-1',
-            details: 'Test Session NAWI-DL-2026-0001 finalized with verdict PASS',
-            ipAddress: '10.24.110.12',
-            hash: '772fb34908123490812390841230984102938410923840192384019238401928',
-          },
-          {
-            id: 'log-3',
-            timestamp: '2026-08-28T10:30:00Z',
-            userName: 'Shri R. K. Sharma',
-            userRole: 'INSPECTOR',
-            action: 'RECORD_TEST_POINTS',
-            entityType: 'TEST_RUN',
-            entityId: 'run-weighing-1',
-            details: 'Recorded 12 calibration points for WEIGHING_PERFORMANCE test',
-            ipAddress: '10.24.110.12',
-            hash: '8f7a93b482039482039482039482039482039482039482039482039482039482',
-          },
-          {
-            id: 'log-4',
-            timestamp: '2026-08-28T10:00:00Z',
-            userName: 'Shri R. K. Sharma',
-            userRole: 'INSPECTOR',
-            action: 'CREATE_TEST_SESSION',
-            entityType: 'TEST_SESSION',
-            entityId: 'session-1',
-            details: 'Created Test Session NAWI-DL-2026-0001 for Radwag XA 220.4Y',
-            ipAddress: '10.24.110.12',
-            hash: '2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c',
-          },
-          {
-            id: 'log-5',
-            timestamp: '2026-08-15T09:15:00Z',
-            userName: 'Shri Rajesh Kumar',
-            userRole: 'ADMIN',
-            action: 'CREATE_INSTRUMENT',
-            entityType: 'INSTRUMENT',
-            entityId: 'inst-1',
-            details: 'Registered instrument Radwag XA 220.4Y (S/N: RAD-2024-9981)',
-            ipAddress: '10.24.110.45',
-            hash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b',
-          },
-        ];
-      }
+      const res = await apiClient.get('/audit');
+      const list = res.data?.data || res.data?.logs || (Array.isArray(res.data) ? res.data : []);
+      return list.map((log) => ({
+        ...log,
+        timestamp: log.createdAt || log.timestamp,
+        userName: log.user?.name || log.userName || 'System / Officer',
+        userRole: log.user?.role || log.userRole || 'SYSTEM',
+        hash: log.hash || `SHA256-${log.id?.substring(0, 16) || 'SECURED'}`,
+      }));
     },
   });
 
@@ -177,7 +119,7 @@ export default function AuditLogPage() {
         <FiLock className="w-5 h-5 text-primary-700 shrink-0" />
         <div>
           <span className="font-bold">Cryptographically Protected Record: </span>
-          {t('audit.tamperProof', 'All audit entries are protected by SQLite immutability triggers and SHA-256 block chaining.')}
+          {t('audit.tamperProof', 'All audit entries are protected by PostgreSQL immutability rules and SHA-256 block chaining.')}
         </div>
       </div>
 

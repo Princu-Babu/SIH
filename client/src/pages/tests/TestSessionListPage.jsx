@@ -22,88 +22,15 @@ export default function TestSessionListPage() {
   const { data: testSessions, isLoading } = useQuery({
     queryKey: ['test-sessions'],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get('/tests');
-        return Array.isArray(res.data) ? res.data : res.data.sessions || [];
-      } catch {
-        return [
-          {
-            id: 'session-1',
-            certificateNumber: 'NAWI-DL-2026-0001',
-            instrument: {
-              id: 'inst-1',
-              model: 'Radwag XA 220.4Y',
-              serialNumber: 'RAD-2024-9981',
-              accuracyClass: 'CLASS_I',
-            },
-            status: 'COMPLETED',
-            overallVerdict: 'PASS',
-            testDate: '2026-08-28T10:30:00Z',
-            finalizedAt: '2026-08-28T12:00:00Z',
-            inspector: { name: 'Shri R. K. Sharma' },
-          },
-          {
-            id: 'session-2',
-            certificateNumber: 'NAWI-DL-2026-0002',
-            instrument: {
-              id: 'inst-2',
-              model: 'Mettler Toledo ME204',
-              serialNumber: 'MT-IND-4420',
-              accuracyClass: 'CLASS_II',
-            },
-            status: 'COMPLETED',
-            overallVerdict: 'PASS',
-            testDate: '2026-08-26T14:15:00Z',
-            finalizedAt: '2026-08-26T15:30:00Z',
-            inspector: { name: 'Dr. Anita Desai' },
-          },
-          {
-            id: 'session-3',
-            certificateNumber: 'NAWI-DL-2026-0003',
-            instrument: {
-              id: 'inst-3',
-              model: 'Essae DS-215 Platform',
-              serialNumber: 'ES-2023-1190',
-              accuracyClass: 'CLASS_III',
-            },
-            status: 'IN_PROGRESS',
-            overallVerdict: 'PENDING',
-            testDate: '2026-08-25T09:00:00Z',
-            finalizedAt: null,
-            inspector: { name: 'Shri V. Murugan' },
-          },
-          {
-            id: 'session-4',
-            certificateNumber: 'NAWI-DL-2026-0004',
-            instrument: {
-              id: 'inst-4',
-              model: 'Avery Weigh-Tronix Bridge',
-              serialNumber: 'AW-60T-8812',
-              accuracyClass: 'CLASS_III',
-            },
-            status: 'COMPLETED',
-            overallVerdict: 'FAIL',
-            testDate: '2026-08-22T11:45:00Z',
-            finalizedAt: '2026-08-22T16:00:00Z',
-            inspector: { name: 'Dr. Anita Desai' },
-          },
-          {
-            id: 'session-5',
-            certificateNumber: 'NAWI-DL-2026-0005',
-            instrument: {
-              id: 'inst-5',
-              model: 'Shimadzu Crane CS-5',
-              serialNumber: 'SH-CR-3301',
-              accuracyClass: 'CLASS_IIII',
-            },
-            status: 'DRAFT',
-            overallVerdict: 'PENDING',
-            testDate: '2026-08-30T10:00:00Z',
-            finalizedAt: null,
-            inspector: { name: 'Shri R. K. Sharma' },
-          },
-        ];
-      }
+      const res = await apiClient.get('/tests');
+      const list = res.data?.data || res.data?.sessions || (Array.isArray(res.data) ? res.data : []);
+      return list.map((s) => ({
+        ...s,
+        certificateNumber: s.certificateNo || s.certificateNumber,
+        testDate: s.startedAt || s.createdAt || s.testDate,
+        overallVerdict: s.overallResult || s.overallVerdict || 'PENDING',
+        inspector: s.conductedBy || s.inspector,
+      }));
     },
   });
 

@@ -39,19 +39,15 @@ export default function DashboardPage() {
   const { data: statsData, isLoading: isStatsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get('/dashboard/stats');
-        return res.data;
-      } catch {
-        // Fallback default statistics if API endpoint is still initializing
-        return {
-          totalInstruments: 24,
-          pendingTests: 5,
-          completedTests: 42,
-          failedTests: 3,
-          complianceRate: 93.3,
-        };
-      }
+      const res = await apiClient.get('/dashboard/stats');
+      const stats = res.data?.stats || res.data?.data || res.data;
+      return {
+        totalInstruments: stats.totalInstruments ?? 0,
+        pendingTests: stats.inProgressTests ?? stats.pendingTests ?? 0,
+        completedTests: stats.completedTests ?? 0,
+        failedTests: stats.failedTests ?? 0,
+        complianceRate: stats.passRate ?? stats.complianceRate ?? 100,
+      };
     },
   });
 
@@ -59,50 +55,15 @@ export default function DashboardPage() {
   const { data: recentSessions, isLoading: isSessionsLoading } = useQuery({
     queryKey: ['recent-sessions'],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get('/dashboard/recent');
-        return Array.isArray(res.data) ? res.data : res.data.sessions || [];
-      } catch {
-        // Fallback sample records
-        return [
-          {
-            id: 'demo-1',
-            certificateNumber: 'NAWI-DL-2026-0001',
-            instrument: { model: 'Radwag XA 220.4Y', serialNumber: 'RAD-2024-9981' },
-            status: 'COMPLETED',
-            overallVerdict: 'PASS',
-            testDate: '2026-08-28T10:30:00Z',
-            inspector: { name: 'Shri R. K. Sharma' },
-          },
-          {
-            id: 'demo-2',
-            certificateNumber: 'NAWI-DL-2026-0002',
-            instrument: { model: 'Mettler Toledo ME204', serialNumber: 'MT-IND-4420' },
-            status: 'COMPLETED',
-            overallVerdict: 'PASS',
-            testDate: '2026-08-26T14:15:00Z',
-            inspector: { name: 'Dr. Anita Desai' },
-          },
-          {
-            id: 'demo-3',
-            certificateNumber: 'NAWI-DL-2026-0003',
-            instrument: { model: 'Avery Weigh-Tronix Bridge', serialNumber: 'AW-60T-8812' },
-            status: 'IN_PROGRESS',
-            overallVerdict: 'PENDING',
-            testDate: '2026-08-25T09:00:00Z',
-            inspector: { name: 'Shri V. Murugan' },
-          },
-          {
-            id: 'demo-4',
-            certificateNumber: 'NAWI-DL-2026-0004',
-            instrument: { model: 'Essae DS-215 Platform', serialNumber: 'ES-2023-1190' },
-            status: 'COMPLETED',
-            overallVerdict: 'FAIL',
-            testDate: '2026-08-22T11:45:00Z',
-            inspector: { name: 'Dr. Anita Desai' },
-          },
-        ];
-      }
+      const res = await apiClient.get('/dashboard/recent');
+      const raw = res.data?.data?.recentSessions || res.data?.data || res.data?.sessions || (Array.isArray(res.data) ? res.data : []);
+      return raw.map((s) => ({
+        ...s,
+        certificateNumber: s.certificateNo || s.certificateNumber,
+        testDate: s.startedAt || s.createdAt || s.testDate,
+        overallVerdict: s.overallResult || s.overallVerdict || 'PENDING',
+        inspector: s.conductedBy || s.inspector,
+      }));
     },
   });
 

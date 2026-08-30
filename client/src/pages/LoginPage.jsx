@@ -42,10 +42,25 @@ export default function LoginPage() {
     }
   };
 
-  const setCredentials = (demoEmail, demoPassword) => {
+  const setCredentials = async (demoEmail, demoPassword) => {
     setEmail(demoEmail);
     setPassword(demoPassword);
     setErrorMsg('');
+    try {
+      setIsSubmitting(true);
+      await login(demoEmail, demoPassword);
+      toast.success(t('common.success', 'Signed in successfully'));
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      const message =
+        err.response?.data?.message ||
+        err.message ||
+        t('auth.invalidCredentials', 'Invalid email or password');
+      setErrorMsg(message);
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -156,21 +171,21 @@ export default function LoginPage() {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setCredentials('admin@gov.in', 'Admin@12345')}
+                onClick={() => setCredentials('admin@nawi.gov.in', 'password123')}
                 className="px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-center truncate"
               >
                 Admin
               </button>
               <button
                 type="button"
-                onClick={() => setCredentials('inspector@gov.in', 'Inspector@12345')}
+                onClick={() => setCredentials('inspector@nawi.gov.in', 'password123')}
                 className="px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-center truncate"
               >
                 Inspector
               </button>
               <button
                 type="button"
-                onClick={() => setCredentials('viewer@gov.in', 'Viewer@12345')}
+                onClick={() => setCredentials('viewer@nawi.gov.in', 'password123')}
                 className="px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-center truncate"
               >
                 Auditor

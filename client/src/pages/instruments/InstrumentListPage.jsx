@@ -22,89 +22,14 @@ export default function InstrumentListPage() {
   const { data: instruments, isLoading } = useQuery({
     queryKey: ['instruments'],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get('/instruments');
-        return Array.isArray(res.data) ? res.data : res.data.instruments || [];
-      } catch {
-        // Fallback seed instruments if backend is offline or starting up
-        return [
-          {
-            id: 'inst-1',
-            serialNumber: 'RAD-2024-9981',
-            model: 'Radwag XA 220.4Y',
-            manufacturer: 'Radwag Metrology',
-            instrumentType: 'LABORATORY_BALANCE',
-            accuracyClass: 'CLASS_I',
-            maxCapacity: 220,
-            minCapacity: 0.01,
-            verificationScaleInterval_e: 0.001,
-            actualScaleInterval_d: 0.0001,
-            unit: 'g',
-            location: 'National Metrology Lab, Room 204, New Delhi',
-            isActive: true,
-          },
-          {
-            id: 'inst-2',
-            serialNumber: 'MT-IND-4420',
-            model: 'Mettler Toledo ME204',
-            manufacturer: 'Mettler Toledo India',
-            instrumentType: 'PRECISION_BALANCE',
-            accuracyClass: 'CLASS_II',
-            maxCapacity: 2000,
-            minCapacity: 0.5,
-            verificationScaleInterval_e: 0.01,
-            actualScaleInterval_d: 0.001,
-            unit: 'g',
-            location: 'Quality Control Dept, Okhla Industrial Area',
-            isActive: true,
-          },
-          {
-            id: 'inst-3',
-            serialNumber: 'ES-2023-1190',
-            model: 'Essae DS-215 Platform',
-            manufacturer: 'Essae-Teraoka Ltd',
-            instrumentType: 'PLATFORM_SCALE',
-            accuracyClass: 'CLASS_III',
-            maxCapacity: 150,
-            minCapacity: 1,
-            verificationScaleInterval_e: 0.05,
-            actualScaleInterval_d: 0.05,
-            unit: 'kg',
-            location: 'Mandi Agricultural Market Yard, Azadpur',
-            isActive: true,
-          },
-          {
-            id: 'inst-4',
-            serialNumber: 'AW-60T-8812',
-            model: 'Avery Weigh-Tronix Bridge',
-            manufacturer: 'Avery India',
-            instrumentType: 'TRUCK_WEIGHBRIDGE',
-            accuracyClass: 'CLASS_III',
-            maxCapacity: 60000,
-            minCapacity: 400,
-            verificationScaleInterval_e: 20,
-            actualScaleInterval_d: 20,
-            unit: 'kg',
-            location: 'Inland Container Depot (ICD), Tughlakabad',
-            isActive: true,
-          },
-          {
-            id: 'inst-5',
-            serialNumber: 'SH-CR-3301',
-            model: 'Shimadzu Crane CS-5',
-            manufacturer: 'Shimadzu Metrology',
-            instrumentType: 'CRANE_SCALE',
-            accuracyClass: 'CLASS_IIII',
-            maxCapacity: 5000,
-            minCapacity: 100,
-            verificationScaleInterval_e: 5,
-            actualScaleInterval_d: 5,
-            unit: 'kg',
-            location: 'Steel Authority Yard, Warehouse 3',
-            isActive: true,
-          },
-        ];
-      }
+      const res = await apiClient.get('/instruments');
+      const list = res.data?.data || res.data?.instruments || (Array.isArray(res.data) ? res.data : []);
+      return list.map((item) => ({
+        ...item,
+        verificationScaleInterval_e: item.verificationInterval ?? item.verificationScaleInterval_e,
+        actualScaleInterval_d: item.actualInterval ?? item.actualScaleInterval_d,
+        instrumentType: item.type ?? item.instrumentType,
+      }));
     },
   });
 
@@ -129,7 +54,7 @@ export default function InstrumentListPage() {
   const columns = [
     {
       header: t('common.sNo', 'S.No'),
-      accessor: (_, idx) => idx + 1,
+      render: (_, idx) => idx + 1,
       cellClass: 'text-xs font-semibold text-slate-500 w-12 text-center',
     },
     {

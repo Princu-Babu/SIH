@@ -34,27 +34,17 @@ export default function TestDataEntryPage() {
   const { data: session, isLoading } = useQuery({
     queryKey: ['test-session', sessionId],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get(`/tests/${sessionId}`);
-        return res.data;
-      } catch {
-        return {
-          id: sessionId,
-          certificateNumber: 'NAWI-DL-2026-0001',
-          instrument: {
-            id: 'inst-1',
-            model: 'Radwag XA 220.4Y',
-            serialNumber: 'RAD-2024-9981',
-            accuracyClass: 'CLASS_I',
-            maxCapacity: 220,
-            minCapacity: 0.01,
-            verificationScaleInterval_e: 0.001,
-            actualScaleInterval_d: 0.0001,
-            unit: 'g',
-            verificationType: 'INITIAL',
-          },
-        };
-      }
+      const res = await apiClient.get(`/tests/${sessionId}`);
+      const raw = res.data?.data || res.data;
+      return {
+        ...raw,
+        certificateNumber: raw.certificateNo || raw.certificateNumber,
+        instrument: raw.instrument ? {
+          ...raw.instrument,
+          verificationScaleInterval_e: raw.instrument.verificationInterval ?? raw.instrument.verificationScaleInterval_e,
+          actualScaleInterval_d: raw.instrument.actualInterval ?? raw.instrument.actualScaleInterval_d,
+        } : null,
+      };
     },
   });
 
@@ -167,33 +157,73 @@ export default function TestDataEntryPage() {
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async ({ isComplete }) => {
+      let payloadData = {};
+      if (normalizedTestType === 'WEIGHING_PERFORMANCE' || normalizedTestType === 'WEIGHING') {
+        payloadData = {
+          points: weighingPoints.flatMap((pt) => [
+            { appliedLoad: Number(pt.load), indicatedValue: Number(pt.incReading), isIncreasing: true },
+            { appliedLoad: Number(pt.load), indicatedValue: Number(pt.decReading), isIncreasing: false },
+          ]),
+        };
+      } else if (normalizedTestType === 'REPEATABILITY') {
+        payloadData = {
+          series: [
+            { load: roundTo(Number(instrument.maxCapacity) * 0.5, 4), readings: repeatabilityHalf.map((p) => Number(p.reading) || 0) },
+            { load: Number(instrument.maxCapacity), readings: repeatabilityFull.map((p) => Number(p.reading) || 0) },
+          ],
+        };
+      } else if (normalizedTestType === 'ECCENTRICITY') {
+        const eccLoad = roundTo(Number(instrument.maxCapacity) / 3, 4);
+        payloadData = {
+          positions: eccentricityPoints.map((pt, idx) => ({
+            position: idx === 0 ? 'CENTER' : `POS_${idx + 1}`,
+            appliedLoad: eccLoad,
+            indicatedValue: Number(pt.reading) || eccLoad,
+          })),
+        };
+      } else if (normalizedTestType === 'TEMPERATURE' || normalizedTestType === 'TEMPERATURE_EFFECTS') {
+        payloadData = {
+          temperaturePoints: temperaturePoints.map((pt) => ({
+            temperature: Number(pt.temp),
+            zeroIndication: Number(pt.zeroReading) || 0,
+            spanLoad: Number(instrument.maxCapacity),
+            spanIndication: Number(pt.spanReading) || Number(instrument.maxCapacity),
+          })),
+        };
+      } else if (normalizedTestType === 'STABILITY') {
+        payloadData = {
+          timePoints: stabilityPoints.map((pt) => ({
+            timestampMinutes: Number(pt.timeHrs) * 60,
+            zeroReading: 0,
+            loadReading: Number(pt.reading) || Number(instrument.maxCapacity),
+            appliedLoad: Number(instrument.maxCapacity),
+          })),
+        };
+      } else if (normalizedTestType === 'TIME_DEPENDENCE') {
+        payloadData = {
+          testLoad: Number(instrument.maxCapacity),
+          creepReadings: creepPoints.map((pt) => ({
+            minute: Number(pt.min),
+            indication: Number(pt.reading) || Number(instrument.maxCapacity),
+          })),
+          zeroReturn: {
+            appliedLoad: Number(instrument.maxCapacity),
+            indicationAfterUnload: Number(zeroReturnReading) || 0,
+          },
+        };
+      }
+
       const payload = {
-        sessionId,
-        testType: normalizedTestType,
-        isComplete,
-        points: {
-          weighingPoints,
-          repeatabilityHalf,
-          repeatabilityFull,
-          eccentricityPoints,
-          temperaturePoints,
-          stabilityPoints,
-          creepPoints,
-          zeroReturnReading,
-        },
+        testType: normalizedTestType === 'WEIGHING' ? 'WEIGHING_PERFORMANCE' : normalizedTestType === 'TEMPERATURE_EFFECTS' ? 'TEMPERATURE' : normalizedTestType,
+        data: payloadData,
       };
-      const res = await apiClient.post(`/tests/${sessionId}/results`, payload).catch(() => ({ data: { success: true } }));
+
+      const res = await apiClient.post(`/tests/${sessionId}/results`, payload);
       return res.data;
     },
-    onSuccess: (_, variables) => {
-      toast.success(
-        variables.isComplete
-          ? t('tests.testSaved', 'Test module completed & verified successfully.')
-          : t('tests.testSaved', 'Test data saved successfully.')
-      );
-      if (variables.isComplete) {
-        navigate(`/tests/${sessionId}`);
-      }
+    onSuccess: () => {
+      toast.success(t('tests.testSaved', 'Test module data evaluated and saved successfully.'));
+      navigate(`/tests/${sessionId}`);
     },
     onError: (err) => {
       const msg = err.response?.data?.message || err.message || 'Error saving test data';
@@ -368,7 +398,7 @@ export default function TestDataEntryPage() {
               {instrument.model} (S/N: {instrument.serialNumber || 'N/A'})
             </div>
             <div className="text-slate-500 font-mono text-[11px]">
-              Accuracy: {instrument.accuracyClass} | Max: {instrument.maxCapacity} {instrument.unit} | e: {instrument.verificationScaleInterval_e} {instrument.unit}
+              Accuracy: {instrument.accuracyClass} | Max: {instrument.maxCapacity} {instrument.unit} | e: {instrument.verificationScaleInterval_e ?? instrument.verificationInterval} {instrument.unit}
             </div>
           </div>
         </div>

@@ -26,35 +26,14 @@ export default function ReportPage() {
   const { data: session, isLoading } = useQuery({
     queryKey: ['report-session', sessionId],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get(`/tests/${sessionId}`);
-        return res.data;
-      } catch {
-        return {
-          id: sessionId,
-          certificateNumber: 'NAWI-DL-2026-0001',
-          testDate: '2026-08-28T10:30:00Z',
-          status: 'COMPLETED',
-          overallVerdict: 'PASS',
-          ambientTemp: 22.4,
-          relativeHumidity: 52,
-          atmosphericPressure: 1013.25,
-          certificateHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-          inspector: { name: 'Shri R. K. Sharma', designation: 'Legal Metrology Officer' },
-          instrument: {
-            id: 'inst-1',
-            model: 'Radwag XA 220.4Y',
-            serialNumber: 'RAD-2024-9981',
-            manufacturer: 'Radwag Metrology',
-            accuracyClass: 'CLASS_I',
-            maxCapacity: 220,
-            minCapacity: 0.01,
-            verificationScaleInterval_e: 0.001,
-            unit: 'g',
-            location: 'National Metrology Lab, Room 204, New Delhi',
-          },
-        };
-      }
+      const res = await apiClient.get(`/tests/${sessionId}`);
+      const raw = res.data?.data || res.data;
+      return {
+        ...raw,
+        certificateNumber: raw.certificateNo || raw.certificateNumber,
+        overallVerdict: raw.overallResult || raw.overallVerdict,
+        inspector: raw.conductedBy || raw.inspector,
+      };
     },
   });
 

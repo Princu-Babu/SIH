@@ -36,46 +36,24 @@ export default function TestSessionDetailPage() {
   const { data: session, isLoading } = useQuery({
     queryKey: ['test-session', id],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get(`/tests/${id}`);
-        return res.data;
-      } catch {
-        // Fallback demo session if offline
-        return {
-          id,
-          certificateNumber: 'NAWI-DL-2026-0001',
-          testDate: '2026-08-28T10:30:00Z',
-          status: 'IN_PROGRESS',
-          overallVerdict: 'PASS',
-          ambientTemp: 22.5,
-          relativeHumidity: 54,
-          atmosphericPressure: 1013.25,
-          standardWeightsUsed: 'Standard Metrological Weight Set Class E2/F1/M1',
-          remarks: 'Instrument leveled properly; ambient conditions within standard limits.',
-          inspector: { name: 'Shri R. K. Sharma', designation: 'Legal Metrology Officer' },
-          instrument: {
-            id: 'inst-1',
-            serialNumber: 'RAD-2024-9981',
-            model: 'Radwag XA 220.4Y',
-            manufacturer: 'Radwag Metrology',
-            accuracyClass: 'CLASS_I',
-            maxCapacity: 220,
-            minCapacity: 0.01,
-            verificationScaleInterval_e: 0.001,
-            actualScaleInterval_d: 0.0001,
-            unit: 'g',
-            location: 'National Metrology Lab, Room 204',
-          },
-          testRuns: [
-            { testType: 'WEIGHING_PERFORMANCE', verdict: 'PASS', pointsCount: 12 },
-            { testType: 'REPEATABILITY', verdict: 'PASS', pointsCount: 12 },
-            { testType: 'ECCENTRICITY', verdict: 'PASS', pointsCount: 5 },
-            { testType: 'TEMPERATURE', verdict: 'PASS', pointsCount: 3 },
-            { testType: 'STABILITY', verdict: 'PASS', pointsCount: 6 },
-            { testType: 'TIME_DEPENDENCE', verdict: 'PENDING', pointsCount: 0 },
-          ],
-        };
-      }
+      const res = await apiClient.get(`/tests/${id}`);
+      const raw = res.data?.data || res.data;
+      return {
+        ...raw,
+        certificateNumber: raw.certificateNo || raw.certificateNumber,
+        ambientTemp: raw.temperature ?? raw.ambientTemp,
+        relativeHumidity: raw.humidity ?? raw.relativeHumidity,
+        testDate: raw.startedAt || raw.createdAt || raw.testDate,
+        overallVerdict: raw.overallResult || raw.overallVerdict,
+        inspector: raw.conductedBy || raw.inspector,
+        testRuns: raw.testResults?.map((r) => ({
+          testType: r.testType,
+          verdict: r.result || r.verdict || 'PENDING',
+          pointsCount: Array.isArray(r.data?.points) ? r.data.points.length : Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0),
+          data: r.data,
+          calculations: r.calculations,
+        })) || raw.testRuns || [],
+      };
     },
   });
 

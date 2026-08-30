@@ -22,28 +22,14 @@ export default function InstrumentDetailPage() {
   const { data: instrument, isLoading: isInstLoading } = useQuery({
     queryKey: ['instrument', id],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get(`/instruments/${id}`);
-        return res.data;
-      } catch {
-        return {
-          id,
-          serialNumber: 'RAD-2024-9981',
-          model: 'Radwag XA 220.4Y',
-          manufacturer: 'Radwag Metrology',
-          instrumentType: 'LABORATORY_BALANCE',
-          accuracyClass: 'CLASS_I',
-          maxCapacity: 220,
-          minCapacity: 0.01,
-          verificationScaleInterval_e: 0.001,
-          actualScaleInterval_d: 0.0001,
-          unit: 'g',
-          location: 'National Metrology Lab, Room 204, New Delhi',
-          verificationType: 'INITIAL',
-          isActive: true,
-          createdAt: '2026-01-15T10:00:00Z',
-        };
-      }
+      const res = await apiClient.get(`/instruments/${id}`);
+      const raw = res.data?.data || res.data;
+      return {
+        ...raw,
+        verificationScaleInterval_e: raw.verificationInterval ?? raw.verificationScaleInterval_e,
+        actualScaleInterval_d: raw.actualInterval ?? raw.actualScaleInterval_d,
+        instrumentType: raw.type ?? raw.instrumentType,
+      };
     },
   });
 
@@ -51,23 +37,15 @@ export default function InstrumentDetailPage() {
   const { data: testSessions, isLoading: isSessionsLoading } = useQuery({
     queryKey: ['instrument-sessions', id],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get(`/instruments/${id}/test-sessions`);
-        return Array.isArray(res.data) ? res.data : res.data.sessions || [];
-      } catch {
-        return [
-          {
-            id: 'demo-session-1',
-            certificateNumber: 'NAWI-DL-2026-0001',
-            testDate: '2026-08-28T10:30:00Z',
-            status: 'COMPLETED',
-            overallVerdict: 'PASS',
-            ambientTemp: 22.4,
-            relativeHumidity: 52,
-            inspector: { name: 'Shri R. K. Sharma' },
-          },
-        ];
-      }
+      const res = await apiClient.get(`/tests?instrumentId=${id}`);
+      const list = res.data?.data || res.data?.testSessions || (Array.isArray(res.data) ? res.data : []);
+      return list.map((s) => ({
+        ...s,
+        certificateNumber: s.certificateNo || s.certificateNumber,
+        testDate: s.startedAt || s.createdAt || s.testDate,
+        overallVerdict: s.overallResult || s.overallVerdict,
+        inspector: s.conductedBy || s.inspector,
+      }));
     },
   });
 

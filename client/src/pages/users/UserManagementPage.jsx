@@ -30,43 +30,8 @@ export default function UserManagementPage() {
   const { data: users, isLoading } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      try {
-        const res = await apiClient.get('/users');
-        return Array.isArray(res.data) ? res.data : res.data.users || [];
-      } catch {
-        return [
-          {
-            id: 'u-1',
-            name: 'Shri Rajesh Kumar (Admin)',
-            email: 'admin@gov.in',
-            role: 'ADMIN',
-            designation: 'Director of Legal Metrology',
-            department: 'Ministry of Consumer Affairs',
-            isActive: true,
-            createdAt: '2026-01-01T00:00:00Z',
-          },
-          {
-            id: 'u-2',
-            name: 'Dr. Anita Desai',
-            email: 'inspector@gov.in',
-            role: 'INSPECTOR',
-            designation: 'Senior Metrological Officer',
-            department: 'Standards & Verification Wing',
-            isActive: true,
-            createdAt: '2026-01-05T00:00:00Z',
-          },
-          {
-            id: 'u-3',
-            name: 'Shri V. Murugan',
-            email: 'viewer@gov.in',
-            role: 'VIEWER',
-            designation: 'External Quality Auditor',
-            department: 'National Accreditation Board',
-            isActive: true,
-            createdAt: '2026-02-10T00:00:00Z',
-          },
-        ];
-      }
+      const res = await apiClient.get('/users');
+      return res.data?.data || res.data?.users || (Array.isArray(res.data) ? res.data : []);
     },
   });
 
