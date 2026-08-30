@@ -17,12 +17,15 @@ import ReportPage from './pages/reports/ReportPage';
 import UserManagementPage from './pages/users/UserManagementPage';
 import AuditLogPage from './pages/audit/AuditLogPage';
 import SettingsPage from './pages/SettingsPage';
+import PublicVerificationPage from './pages/public/PublicVerificationPage';
 
 export default function App() {
   return (
     <Routes>
-      {/* Public Route */}
+      {/* Public Routes */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/verify" element={<PublicVerificationPage />} />
+      <Route path="/verify/:certificateNo" element={<PublicVerificationPage />} />
 
       {/* Protected App Routes inside AppLayout */}
       <Route

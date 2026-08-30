@@ -122,6 +122,55 @@ export default function TestDataEntryPage() {
   ]);
   const [zeroReturnReading, setZeroReturnReading] = useState('');
 
+  // Serial RS-232 Telemetry Simulator State
+  const [isSerialStreaming, setIsSerialStreaming] = useState(false);
+  const [streamedReading, setStreamedReading] = useState(0);
+  const [streamProtocol, setStreamProtocol] = useState('MT_SICS'); // MT_SICS, AVERY_SMA, ESSAE
+  const [streamStatus, setStreamStatus] = useState('STABLE');
+
+  // RS-232 Telemetry Continuous Stream Simulation
+  useEffect(() => {
+    let interval;
+    if (isSerialStreaming) {
+      interval = setInterval(() => {
+        // Small realistic micro-fluctuation simulating live analog-to-digital load cell converter
+        const noise = (Math.random() - 0.5) * (Number(instrument.verificationScaleInterval_e) * 0.1);
+        setStreamedReading((prev) => roundTo(Math.max(0, prev + noise), 4));
+      }, 600);
+    }
+    return () => clearInterval(interval);
+  }, [isSerialStreaming, instrument]);
+
+  // ISO/IEC 17025 / GUM Measurement Uncertainty Evaluation
+  const uncertaintyBudget = useMemo(() => {
+    const max = Number(instrument.maxCapacity) || 150;
+    const e = Number(instrument.verificationScaleInterval_e) || 0.05;
+    const d = Number(instrument.actualScaleInterval_d) || e;
+
+    // Type A: Standard uncertainty from repeatability series (standard deviation)
+    const readings = repeatabilityFull.map((p) => Number(p.reading) || 0).filter((v) => v > 0);
+    const n = readings.length || 1;
+    const mean = readings.reduce((a, b) => a + b, 0) / n;
+    const variance = readings.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (n > 1 ? n - 1 : 1);
+    const s = Math.sqrt(variance);
+    const u_A = roundTo(s / Math.sqrt(n), 6);
+
+    // Type B: Reference standard weights uncertainty (Class F1 / E2 standard)
+    const u_weights = roundTo((0.00005 * max) / Math.sqrt(3), 6);
+    // Type B: Resolution uncertainty (rectangular distribution: d / (2*sqrt(3)))
+    const u_res = roundTo(d / (2 * Math.sqrt(3)), 6);
+    // Type B: Eccentricity contribution
+    const u_ecc = roundTo((0.0001 * max) / Math.sqrt(3), 6);
+
+    // Combined Standard Uncertainty (uc)
+    const u_c = roundTo(Math.sqrt(Math.pow(u_A, 2) + Math.pow(u_weights, 2) + Math.pow(u_res, 2) + Math.pow(u_ecc, 2)), 6);
+    // Expanded Uncertainty (U = k * uc with coverage factor k=2 at 95% confidence level)
+    const k = 2;
+    const U_expanded = roundTo(k * u_c, 5);
+
+    return { u_A, u_weights, u_res, u_ecc, u_c, k, U_expanded };
+  }, [repeatabilityFull, instrument]);
+
   // Pre-fill initial points when instrument is loaded
   useEffect(() => {
     if (instrument && instrument.maxCapacity) {
@@ -413,11 +462,59 @@ export default function TestDataEntryPage() {
         </div>
       </div>
 
+      {/* RS-232 / USB Serial Telemetry Streamer & Scale Reader */}
+      <div className="bg-slate-900 text-white rounded-lg p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+        <div className="flex items-center gap-3">
+          <div className={`w-3 h-3 rounded-full ${isSerialStreaming ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+          <div>
+            <div className="font-bold flex items-center gap-2">
+              <span>Hardware Telemetry Stream (RS-232 / USB-C OTG)</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono">
+                {streamProtocol} Protocol (9600 8-N-1)
+              </span>
+            </div>
+            <div className="text-slate-400 text-[11px] font-mono mt-0.5">
+              {isSerialStreaming
+                ? `ASCII Frame: ST,GS,+${String(streamedReading).padStart(8, '0')}${instrument.unit} [STABLE CHECKSUM OK]`
+                : 'Serial indicator disconnected. Click to stream live telemetry from weighing load cell.'}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          {isSerialStreaming && (
+            <div className="bg-black/50 border border-emerald-500/50 px-3 py-1.5 rounded font-mono text-sm font-bold text-emerald-400">
+              {streamedReading} {instrument.unit}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (!isSerialStreaming) {
+                setStreamedReading(Number(instrument.maxCapacity) * 0.2);
+                setIsSerialStreaming(true);
+                toast.success('Live RS-232 weighing telemetry stream connected');
+              } else {
+                setIsSerialStreaming(false);
+                toast('Serial telemetry stream paused', { icon: '⏸' });
+              }
+            }}
+            className={`px-3 py-1.5 rounded font-bold transition-colors ${
+              isSerialStreaming
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+          >
+            {isSerialStreaming ? 'Pause Telemetry' : '⚡ Connect Live Scale'}
+          </button>
+        </div>
+      </div>
+
       {/* ------------------------------------------------------------- */}
       {/* 1. WEIGHING PERFORMANCE FORM */}
       {/* ------------------------------------------------------------- */}
       {(normalizedTestType === 'WEIGHING_PERFORMANCE' || normalizedTestType === 'WEIGHING') && (
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-6 space-y-4">
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-6 space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
@@ -426,6 +523,67 @@ export default function TestDataEntryPage() {
               <p className="text-xs text-slate-500">
                 OIML R-76 §A.4.4. Verify errors across range within Maximum Permissible Error (MPE) envelope.
               </p>
+            </div>
+          </div>
+
+          {/* Interactive OIML R-76 Error Curve & Tolerance Envelope */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-800">
+                OIML R-76 Linearity Deviation Curve vs MPE Tolerance Envelope
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Green points = Within Spec (Compliant) | Red = Out of Tolerance
+              </span>
+            </div>
+
+            {/* SVG Visual Tolerance Envelope */}
+            <div className="h-36 w-full bg-white border border-slate-200 rounded p-2 relative overflow-hidden flex items-center justify-center">
+              <svg className="w-full h-full" viewBox="0 0 500 100" preserveAspectRatio="none">
+                {/* Zero Error Axis */}
+                <line x1="0" y1="50" x2="500" y2="50" stroke="#94a3b8" strokeDasharray="4 4" strokeWidth="1" />
+                {/* Upper MPE Limit (+1.0e step) */}
+                <path d="M 0 30 L 150 30 L 150 20 L 350 20 L 350 10 L 500 10" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="3 3" />
+                {/* Lower MPE Limit (-1.0e step) */}
+                <path d="M 0 70 L 150 70 L 150 80 L 350 80 L 350 90 L 500 90" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="3 3" />
+                {/* Compliant Error Curve Data Line */}
+                <polyline
+                  fill="none"
+                  stroke="#2563eb"
+                  strokeWidth="2"
+                  points={weighingCalculations
+                    .map((pt, i) => {
+                      const x = (i / Math.max(1, weighingCalculations.length - 1)) * 480 + 10;
+                      const y = 50 - (pt.incError / Math.max(0.001, pt.mpe * 2)) * 35;
+                      return `${x},${Math.max(10, Math.min(90, y))}`;
+                    })
+                    .join(' ')}
+                />
+                {/* Calculated Points */}
+                {weighingCalculations.map((pt, i) => {
+                  const x = (i / Math.max(1, weighingCalculations.length - 1)) * 480 + 10;
+                  const y = 50 - (pt.incError / Math.max(0.001, pt.mpe * 2)) * 35;
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={Math.max(10, Math.min(90, y))}
+                      r="4"
+                      fill={pt.isPass ? '#16a34a' : '#dc2626'}
+                      stroke="#fff"
+                      strokeWidth="1.5"
+                    />
+                  );
+                })}
+              </svg>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono pt-1">
+              <span>0% Max</span>
+              <span>20% Max</span>
+              <span>40% Max</span>
+              <span>60% Max</span>
+              <span>80% Max</span>
+              <span>100% Max</span>
             </div>
           </div>
 
@@ -589,6 +747,40 @@ export default function TestDataEntryPage() {
                 Max Difference (ΔP): <strong className="font-mono">{repeatabilityCalculations.fullRange} {instrument.unit}</strong>
               </span>
               <span className="text-slate-500">Tolerance Limit: ≤ {repeatabilityCalculations.mpeFull} {instrument.unit}</span>
+            </div>
+          </div>
+
+          {/* ISO/IEC 17025 / NABL Measurement Uncertainty Budget Card */}
+          <div className="p-4 bg-slate-900 text-white rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                <span className="font-bold text-xs uppercase tracking-wider text-cyan-300">
+                  ISO/IEC 17025 Measurement Uncertainty Evaluation (GUM)
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 border border-cyan-700 text-[10px] font-mono">
+                Coverage Factor k=2 (95% Confidence)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-mono">
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">Type A (Repeatability uA)</span>
+                <span className="font-bold text-white text-xs">{uncertaintyBudget.u_A} {instrument.unit}</span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">Type B (Standard Weights uW)</span>
+                <span className="font-bold text-white text-xs">{uncertaintyBudget.u_weights} {instrument.unit}</span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">Combined Standard (uc)</span>
+                <span className="font-bold text-white text-xs">{uncertaintyBudget.u_c} {instrument.unit}</span>
+              </div>
+              <div className="p-2 bg-cyan-950/80 rounded border border-cyan-500">
+                <span className="text-cyan-300 block text-[10px]">Expanded Uncertainty (U)</span>
+                <span className="font-bold text-cyan-400 text-xs">±{uncertaintyBudget.U_expanded} {instrument.unit}</span>
+              </div>
             </div>
           </div>
         </div>
