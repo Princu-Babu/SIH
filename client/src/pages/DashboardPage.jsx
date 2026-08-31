@@ -30,6 +30,7 @@ import PageHeader from '../components/shared/PageHeader';
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import Breadcrumb from '../components/layout/Breadcrumb';
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -88,7 +89,8 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
+      <Breadcrumb />
       <PageHeader
         title={t('dashboard.title', 'Executive Dashboard')}
         subtitle={t('dashboard.subtitle', 'Overview of metrological testing operations and compliance metrics')}
@@ -149,7 +151,7 @@ export default function DashboardPage() {
       {/* 2 Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Compliance Bar Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm flex flex-col justify-between">
+        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
@@ -162,9 +164,9 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <div className="h-64 w-full" style={{minHeight: '256px'}}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+              <BarChart data={monthlyData} key={JSON.stringify(monthlyData)} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
@@ -180,7 +182,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Tests by Category Pie Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm flex flex-col justify-between">
+        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
@@ -193,8 +195,8 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <div className="h-64 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full flex items-center justify-center" style={{minHeight: '256px'}}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
               <PieChart>
                 <Pie
                   data={testDistributionData}
@@ -244,7 +246,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-700">
+            <table className="min-w-full text-left text-sm text-slate-700">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-600">
                 <tr>
                   <th className="px-4 py-3">Certificate No</th>
@@ -296,6 +298,24 @@ export default function DashboardPage() {
                     </td>
                   </tr>
                 ))}
+                {(!recentSessions || recentSessions.length === 0) && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <FiCheckCircle className="w-8 h-8 text-slate-300" />
+                        <p className="text-sm font-medium text-slate-500">No test sessions found</p>
+                        <p className="text-xs text-slate-400">Create your first test session to get started</p>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/tests/new')}
+                          className="mt-2 px-3 py-1.5 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors"
+                        >
+                          + New Test Session
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

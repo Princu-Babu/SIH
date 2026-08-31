@@ -18,7 +18,7 @@ export default function AppLayout() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-surface-50">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-7xl mx-auto page-enter">
             <Breadcrumb />
             <Outlet />
           </div>

@@ -275,6 +275,7 @@ export default function TopBar({ onToggleSidebar }) {
             type="button"
             className="p-2 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 relative"
             title={t('nav.notifications', 'Notifications')}
+            aria-label={t('nav.notifications', 'Notifications')}
           >
             <FiBell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-saffron-500 rounded-full" />
@@ -286,6 +287,7 @@ export default function TopBar({ onToggleSidebar }) {
               type="button"
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
               className="flex items-center gap-2 p-1 text-left rounded-md hover:bg-slate-50 transition-colors"
+              aria-label="User menu"
             >
               <div className="w-8 h-8 rounded bg-[#1e3a5f] text-white font-bold text-xs flex items-center justify-center">
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}

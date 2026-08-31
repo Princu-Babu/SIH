@@ -13,11 +13,13 @@ import TestSessionListPage from './pages/tests/TestSessionListPage';
 import NewTestSessionPage from './pages/tests/NewTestSessionPage';
 import TestSessionDetailPage from './pages/tests/TestSessionDetailPage';
 import TestDataEntryPage from './pages/tests/TestDataEntryPage';
+import ReportsHubPage from './pages/reports/ReportsHubPage';
 import ReportPage from './pages/reports/ReportPage';
 import UserManagementPage from './pages/users/UserManagementPage';
 import AuditLogPage from './pages/audit/AuditLogPage';
 import SettingsPage from './pages/SettingsPage';
 import PublicVerificationPage from './pages/public/PublicVerificationPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 export default function App() {
   return (
@@ -79,7 +81,7 @@ export default function App() {
         />
 
         {/* Reports */}
-        <Route path="/reports" element={<Navigate to="/tests" replace />} />
+        <Route path="/reports" element={<ReportsHubPage />} />
         <Route path="/reports/:sessionId" element={<ReportPage />} />
 
         {/* Admin & Inspector Management */}
@@ -110,7 +112,8 @@ export default function App() {
       </Route>
 
       {/* Fallback */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
+
   );
 }

@@ -131,9 +131,9 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-slate-200 bg-slate-50/50">
-          <div className="text-[11px] text-slate-500 flex items-center justify-between">
-            <span>Version 1.0.4-L</span>
-            <span className="font-semibold text-slate-700">Gov.in Portal</span>
+          <div className="text-xs text-slate-500 flex items-center justify-between">
+            <span className="font-semibold">v1.0.4-L OIML</span>
+            <a href="https://legalmetrology.gov.in" target="_blank" rel="noopener noreferrer" className="font-semibold text-primary-700 hover:underline">Gov.in Portal ↗</a>
           </div>
         </div>
       </aside>

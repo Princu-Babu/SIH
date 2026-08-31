@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
+import AccessDeniedPage from '../../pages/AccessDeniedPage';
 
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -22,7 +23,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   if (allowedRoles && allowedRoles.length > 0) {
     const userRole = user?.role || 'VIEWER';
     if (!allowedRoles.includes(userRole)) {
-      return <Navigate to="/dashboard" replace />;
+      return <AccessDeniedPage />;
     }
   }
 

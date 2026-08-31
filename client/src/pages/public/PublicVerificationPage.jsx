@@ -36,8 +36,8 @@ export default function PublicVerificationPage() {
   const { certificateNo: paramCert } = useParams();
   const navigate = useNavigate();
 
-  const [searchCert, setSearchCert] = useState(paramCert || 'CERT-2026-APMC-PUNJAB-9901');
-  const [activeCert, setActiveCert] = useState(paramCert || (paramCert === undefined ? 'CERT-2026-APMC-PUNJAB-9901' : ''));
+  const [searchCert, setSearchCert] = useState(paramCert || '');
+  const [activeCert, setActiveCert] = useState(paramCert || '');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedSeal, setCopiedSeal] = useState(false);
 
