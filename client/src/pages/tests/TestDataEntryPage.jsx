@@ -9,12 +9,15 @@ import {
   FiCheckCircle,
   FiInfo,
   FiLayers,
+  FiUploadCloud,
 } from 'react-icons/fi';
 
 import apiClient from '../../hooks/useApi';
 import PageHeader from '../../components/shared/PageHeader';
 import StatusBadge from '../../components/shared/StatusBadge';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
+import SerialTelemetryToolbar from '../../components/telemetry/SerialTelemetryToolbar';
+import BatchCsvModal from '../../components/batch/BatchCsvModal';
 import {
   calculateMpe,
   calculateContinuousIndication,
@@ -121,25 +124,8 @@ export default function TestDataEntryPage() {
     { min: 30, reading: '' },
   ]);
   const [zeroReturnReading, setZeroReturnReading] = useState('');
-
-  // Serial RS-232 Telemetry Simulator State
-  const [isSerialStreaming, setIsSerialStreaming] = useState(false);
-  const [streamedReading, setStreamedReading] = useState(0);
-  const [streamProtocol, setStreamProtocol] = useState('MT_SICS'); // MT_SICS, AVERY_SMA, ESSAE
-  const [streamStatus, setStreamStatus] = useState('STABLE');
-
-  // RS-232 Telemetry Continuous Stream Simulation
-  useEffect(() => {
-    let interval;
-    if (isSerialStreaming) {
-      interval = setInterval(() => {
-        // Small realistic micro-fluctuation simulating live analog-to-digital load cell converter
-        const noise = (Math.random() - 0.5) * (Number(instrument.verificationScaleInterval_e) * 0.1);
-        setStreamedReading((prev) => roundTo(Math.max(0, prev + noise), 4));
-      }, 600);
-    }
-    return () => clearInterval(interval);
-  }, [isSerialStreaming, instrument]);
+  const [isBatchCsvModalOpen, setIsBatchCsvModalOpen] = useState(false);
+  const [focusedField, setFocusedField] = useState(null); // { type: 'weighing', index: 0, field: 'incReading' }
 
   // ISO/IEC 17025 / GUM Measurement Uncertainty Evaluation
   const uncertaintyBudget = useMemo(() => {
@@ -462,60 +448,47 @@ export default function TestDataEntryPage() {
         </div>
       </div>
 
-      {/* RS-232 / USB Serial Telemetry Streamer & Scale Reader */}
-      <div className="bg-slate-900 text-white rounded-lg p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-        <div className="flex items-center gap-3">
-          <div className={`w-3 h-3 rounded-full ${isSerialStreaming ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-          <div>
-            <div className="font-bold flex items-center gap-2">
-              <span>Hardware Telemetry Stream (RS-232 / USB-C OTG)</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono">
-                {streamProtocol} Protocol (9600 8-N-1)
-              </span>
-            </div>
-            <div className="text-slate-400 text-[11px] font-mono mt-0.5">
-              {isSerialStreaming
-                ? `ASCII Frame: ST,GS,+${String(streamedReading).padStart(8, '0')}${instrument.unit} [STABLE CHECKSUM OK]`
-                : 'Serial indicator disconnected. Click to stream live telemetry from weighing load cell.'}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          {isSerialStreaming && (
-            <div className="bg-black/50 border border-emerald-500/50 px-3 py-1.5 rounded font-mono text-sm font-bold text-emerald-400">
-              {streamedReading} {instrument.unit}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              if (!isSerialStreaming) {
-                setStreamedReading(Number(instrument.maxCapacity) * 0.2);
-                setIsSerialStreaming(true);
-                toast.success('Live RS-232 weighing telemetry stream connected');
-              } else {
-                setIsSerialStreaming(false);
-                toast('Serial telemetry stream paused', { icon: '⏸' });
-              }
-            }}
-            className={`px-3 py-1.5 rounded font-bold transition-colors ${
-              isSerialStreaming
-                ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-            }`}
-          >
-            {isSerialStreaming ? 'Pause Telemetry' : '⚡ Connect Live Scale'}
-          </button>
-        </div>
-      </div>
+      {/* RS-232 / USB Serial Telemetry Digital Indicator Toolbar */}
+      <SerialTelemetryToolbar
+        instrument={instrument}
+        onCaptureReading={(captured) => {
+          if (focusedField) {
+            if (focusedField.type === 'weighing') {
+              setWeighingPoints((prev) =>
+                prev.map((p, i) => (i === focusedField.index ? { ...p, [focusedField.field]: captured.weight } : p))
+              );
+            } else if (focusedField.type === 'repeatabilityHalf') {
+              setRepeatabilityHalf((prev) =>
+                prev.map((p, i) => (i === focusedField.index ? { ...p, reading: captured.weight } : p))
+              );
+            } else if (focusedField.type === 'repeatabilityFull') {
+              setRepeatabilityFull((prev) =>
+                prev.map((p, i) => (i === focusedField.index ? { ...p, reading: captured.weight } : p))
+              );
+            } else if (focusedField.type === 'eccentricity') {
+              setEccentricityPoints((prev) =>
+                prev.map((p, i) => (i === focusedField.index ? { ...p, reading: captured.weight } : p))
+              );
+            }
+          } else {
+            // Default: capture into first row of active test
+            if ((normalizedTestType === 'WEIGHING_PERFORMANCE' || normalizedTestType === 'WEIGHING') && weighingPoints.length > 0) {
+              setWeighingPoints((prev) => {
+                const next = [...prev];
+                next[0] = { ...next[0], incReading: captured.weight };
+                return next;
+              });
+            }
+          }
+        }}
+      />
 
       {/* ------------------------------------------------------------- */}
       {/* 1. WEIGHING PERFORMANCE FORM */}
       {/* ------------------------------------------------------------- */}
       {(normalizedTestType === 'WEIGHING_PERFORMANCE' || normalizedTestType === 'WEIGHING') && (
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 gap-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
                 Increasing & Decreasing Load Verification Table
@@ -523,6 +496,16 @@ export default function TestDataEntryPage() {
               <p className="text-xs text-slate-500">
                 OIML R-76 §A.4.4. Verify errors across range within Maximum Permissible Error (MPE) envelope.
               </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsBatchCsvModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 rounded-lg text-xs transition-colors shadow-sm"
+              >
+                <FiUploadCloud className="w-3.5 h-3.5" />
+                <span>Batch CSV Weighbridge Import</span>
+              </button>
             </div>
           </div>
 
@@ -613,6 +596,7 @@ export default function TestDataEntryPage() {
                         type="number"
                         step="any"
                         value={row.incReading}
+                        onFocus={() => setFocusedField({ type: 'weighing', index: idx, field: 'incReading' })}
                         onChange={(e) => {
                           const val = e.target.value;
                           setWeighingPoints((prev) =>
@@ -634,6 +618,7 @@ export default function TestDataEntryPage() {
                         type="number"
                         step="any"
                         value={row.decReading}
+                        onFocus={() => setFocusedField({ type: 'weighing', index: idx, field: 'decReading' })}
                         onChange={(e) => {
                           const val = e.target.value;
                           setWeighingPoints((prev) =>
@@ -1105,6 +1090,26 @@ export default function TestDataEntryPage() {
           </button>
         </div>
       </div>
+
+      {/* Batch CSV Import Modal */}
+      <BatchCsvModal
+        isOpen={isBatchCsvModalOpen}
+        onClose={() => setIsBatchCsvModalOpen(false)}
+        sessionId={sessionId}
+        instrument={instrument}
+        onImportSuccess={(parsedData) => {
+          if (parsedData && parsedData.points) {
+            const imported = parsedData.points.map((pt) => ({
+              percent: pt.percentMax,
+              load: pt.appliedLoad,
+              incReading: pt.incReading,
+              decReading: pt.decReading,
+            }));
+            setWeighingPoints(imported);
+            toast.success(`Populated ${imported.length} weighbridge calibration points.`);
+          }
+        }}
+      />
     </div>
   );
 }

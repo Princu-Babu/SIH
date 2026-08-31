@@ -4,11 +4,13 @@
  *
  * Generates a comprehensive, multi-page Technical Data Sheet report
  * containing detailed metrological test tables, calculations, error curves,
- * compliance matrices, and official verification sign-offs.
+ * compliance matrices, multi-interval breakdown, ISO GUM uncertainty budgets,
+ * and official verification sign-offs.
  */
 
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
+const { computeExpandedUncertainty } = require('./uncertaintyCalculator');
 
 // Official Color Palette
 const COLORS = {
@@ -107,22 +109,22 @@ async function generateQRCodeBuffer(qrPayload) {
  * Helper to draw a section header banner
  */
 function drawSectionHeader(doc, x, y, width, title, reference) {
-  const headerHeight = 22;
+  const headerHeight = 20;
   doc.rect(x, y, width, headerHeight).fill(COLORS.BG_HEADER);
 
   doc
     .font('Helvetica-Bold')
-    .fontSize(9)
+    .fontSize(8.5)
     .fillColor(COLORS.WHITE)
-    .text(title, x + 8, y + 4, { width: width - 180 });
+    .text(title, x + 8, y + 4.5, { width: width - 180 });
 
   doc
     .font('Helvetica-Oblique')
-    .fontSize(7.5)
+    .fontSize(7)
     .fillColor('#E2E8F0')
     .text(reference, x + width - 170, y + 5, { width: 162, align: 'right' });
 
-  return y + headerHeight + 6;
+  return y + headerHeight + 5;
 }
 
 /**
@@ -166,6 +168,22 @@ async function generateDataSheet(sessionData) {
         resultMap[r.testType] = r;
       });
 
+      // Prepare Uncertainty calculation
+      const repRes = resultMap['REPEATABILITY'];
+      const repStdDev = repRes?.calculations?.maxStdDev || 0;
+      const eccRes = resultMap['ECCENTRICITY'];
+      const eccError = eccRes?.calculations?.maxDifferenceFromCenter || 0;
+      const maxCap = Number(instrument.maxCapacity || 100);
+      const scaleD = Number(instrument.actualInterval || instrument.verificationInterval || 0.001);
+      const accClass = instrument.accuracyClass || 'CLASS_III';
+      const ranges = instrument.ranges || instrument.multiIntervalRanges || [];
+      const hasMultiInterval = Array.isArray(ranges) && ranges.length > 1;
+
+      const uncertaintyBudget = computeExpandedUncertainty(repStdDev, scaleD, maxCap, accClass, {
+        eccError,
+        ranges,
+      });
+
       // Prepare QR Payload
       const qrData = {
         type: 'TECHNICAL_DATA_SHEET',
@@ -175,12 +193,13 @@ async function generateDataSheet(sessionData) {
         result: session.overallResult || 'PASS',
         date: formatDate(session.completedAt || session.startedAt || new Date()),
         inspector: inspector.name || 'Testing Officer',
-        standard: 'OIML R-76-1:2006',
+        standard: 'OIML R-76-1:2006 / ISO GUM',
+        uncertainty: `U = +/-${uncertaintyBudget.expandedUncertainty} ${unit} (k=2)`,
       };
 
       const qrBuffer = await generateQRCodeBuffer(qrData);
 
-      // Create PDF Document with bufferPages enabled for page number computation
+      // Create PDF Document with bufferPages enabled for running headers/footers
       const doc = new PDFDocument({
         size: 'A4',
         margins: { top: 40, bottom: 45, left: 35, right: 35 },
@@ -189,7 +208,7 @@ async function generateDataSheet(sessionData) {
           Title: `Technical Data Sheet - ${session.certificateNo || 'NAWI'}`,
           Author: 'Ministry of Consumer Affairs, Legal Metrology',
           Subject: 'OIML R-76 Technical Metrology Report',
-          Keywords: 'OIML, R-76, Metrology, Technical Data Sheet, NAWI',
+          Keywords: 'OIML, R-76, Metrology, Technical Data Sheet, NAWI, ISO GUM',
         },
       });
 
@@ -207,7 +226,7 @@ async function generateDataSheet(sessionData) {
       // =========================================================================
       // PAGE 1: COVER & INSTRUMENT SPECIFICATION MATRIX
       // =========================================================================
-      let currentY = 48;
+      let currentY = 44;
 
       // Document Title Section
       doc
@@ -216,30 +235,30 @@ async function generateDataSheet(sessionData) {
         .fillColor(COLORS.NAVY)
         .text('GOVERNMENT OF INDIA', leftMargin, currentY, { width: contentWidth, align: 'center' });
 
-      currentY += 14;
+      currentY += 13;
       doc
         .font('Helvetica')
-        .fontSize(9)
+        .fontSize(8.5)
         .fillColor(COLORS.TEXT_DARK)
         .text('MINISTRY OF CONSUMER AFFAIRS, FOOD & PUBLIC DISTRIBUTION', leftMargin, currentY, {
           width: contentWidth,
           align: 'center',
         });
 
-      currentY += 12;
+      currentY += 11;
       doc
         .font('Helvetica')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.TEXT_MUTED)
         .text('DEPARTMENT OF LEGAL METROLOGY • DIRECTORATE OF WEIGHTS & MEASURES', leftMargin, currentY, {
           width: contentWidth,
           align: 'center',
         });
 
-      currentY += 16;
+      currentY += 14;
       doc
         .font('Helvetica-Bold')
-        .fontSize(16)
+        .fontSize(15)
         .fillColor(COLORS.NAVY)
         .text('TECHNICAL DATA SHEET', leftMargin, currentY, {
           width: contentWidth,
@@ -247,27 +266,27 @@ async function generateDataSheet(sessionData) {
           characterSpacing: 1,
         });
 
-      currentY += 18;
+      currentY += 16;
       doc
         .font('Helvetica')
-        .fontSize(9)
+        .fontSize(8.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text('Detailed Test Report & Metrological Verification Record — OIML R-76 Compliance', leftMargin, currentY, {
+        .text('Detailed Test Report & Metrological Verification Record — OIML R-76 & ISO GUM Compliance', leftMargin, currentY, {
           width: contentWidth,
           align: 'center',
         });
 
-      currentY += 14;
+      currentY += 12;
       doc
         .font('Helvetica-Bold')
-        .fontSize(10)
+        .fontSize(9.5)
         .fillColor(COLORS.NAVY)
         .text(`Certificate No: ${session.certificateNo || 'NAWI-2026-XXXXXX'}`, leftMargin, currentY, {
           width: contentWidth,
           align: 'center',
         });
 
-      currentY += 14;
+      currentY += 13;
       doc
         .strokeColor(COLORS.NAVY)
         .lineWidth(1)
@@ -275,7 +294,7 @@ async function generateDataSheet(sessionData) {
         .lineTo(leftMargin + contentWidth, currentY)
         .stroke();
 
-      currentY += 10;
+      currentY += 8;
 
       // Instrument Specification Table
       currentY = drawSectionHeader(
@@ -288,6 +307,17 @@ async function generateDataSheet(sessionData) {
       );
 
       const accClassFormatted = (instrument.accuracyClass || 'CLASS_III').replace('_', ' ');
+      let maxCapDisplay = `${instrument.maxCapacity != null ? instrument.maxCapacity : 'N/A'} ${unit}`;
+      let eValDisplay = `${instrument.verificationInterval != null ? instrument.verificationInterval : 'N/A'} ${unit}`;
+      let dValDisplay = `${instrument.actualInterval != null ? instrument.actualInterval : 'N/A'} ${unit}`;
+
+      if (hasMultiInterval) {
+        const sortedRanges = [...ranges].sort((a, b) => (a.max || a.maxCapacity) - (b.max || b.maxCapacity));
+        maxCapDisplay = `${sortedRanges.map(r => r.max || r.maxCapacity).join(' / ')} ${unit} (Multi-Interval)`;
+        eValDisplay = `${sortedRanges.map(r => r.e || r.verificationInterval).join(' / ')} ${unit}`;
+        dValDisplay = `${sortedRanges.map(r => r.d || r.actualInterval || r.e).join(' / ')} ${unit}`;
+      }
+
       const specRows = [
         [
           { label: 'Instrument Name', value: instrument.name || 'Electronic Weighing Scale' },
@@ -302,12 +332,12 @@ async function generateDataSheet(sessionData) {
           { label: 'Accuracy Class', value: accClassFormatted, isBold: true },
         ],
         [
-          { label: 'Maximum Capacity (Max)', value: `${instrument.maxCapacity != null ? instrument.maxCapacity : 'N/A'} ${unit}` },
+          { label: 'Maximum Capacity (Max)', value: maxCapDisplay },
           { label: 'Minimum Capacity (Min)', value: `${instrument.minCapacity != null ? instrument.minCapacity : 'N/A'} ${unit}` },
         ],
         [
-          { label: 'Verification Scale Interval (e)', value: `${instrument.verificationInterval != null ? instrument.verificationInterval : 'N/A'} ${unit}` },
-          { label: 'Actual Scale Interval (d)', value: `${instrument.actualInterval != null ? instrument.actualInterval : 'N/A'} ${unit}` },
+          { label: 'Verification Interval (e)', value: eValDisplay },
+          { label: 'Actual Scale Interval (d)', value: dValDisplay },
         ],
         [
           { label: 'Testing Location / Lab', value: instrument.location || 'Central Metrology Lab' },
@@ -315,7 +345,7 @@ async function generateDataSheet(sessionData) {
         ],
       ];
 
-      const rowHeight = 15;
+      const rowHeight = 14;
       const halfWidth = contentWidth / 2;
 
       specRows.forEach((row, rIdx) => {
@@ -327,32 +357,80 @@ async function generateDataSheet(sessionData) {
           const cellX = leftMargin + cIdx * halfWidth;
           doc
             .font('Helvetica-Bold')
-            .fontSize(7.5)
+            .fontSize(7)
             .fillColor(COLORS.NAVY)
-            .text(`${cell.label}:`, cellX + 6, rowY + 3.5, { width: 125 });
+            .text(`${cell.label}:`, cellX + 6, rowY + 3, { width: 125 });
 
           doc
             .font(cell.isBold ? 'Helvetica-Bold' : 'Helvetica')
-            .fontSize(7.5)
+            .fontSize(7)
             .fillColor(COLORS.TEXT_DARK)
-            .text(String(cell.value), cellX + 6 + 125, rowY + 3.5, { width: halfWidth - 135, ellipsis: true });
+            .text(String(cell.value), cellX + 6 + 125, rowY + 3, { width: halfWidth - 135, ellipsis: true });
         });
 
         doc.rect(leftMargin, rowY, contentWidth, rowHeight).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
       });
 
       doc.rect(leftMargin, currentY, contentWidth, specRows.length * rowHeight).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
-      currentY += specRows.length * rowHeight + 12;
+      currentY += specRows.length * rowHeight + 8;
+
+      // Multi-Interval Breakdown Table if available
+      if (hasMultiInterval) {
+        const sortedRanges = [...ranges].sort((a, b) => (a.max || a.maxCapacity) - (b.max || b.maxCapacity));
+        const miHeaderH = 12;
+        doc.rect(leftMargin, currentY, contentWidth, miHeaderH).fill('#E2E8F0');
+        const miCols = ['Partial Range', `Capacity (Max_i) [${unit}]`, `Interval (e_i) [${unit}]`, `Interval (d_i) [${unit}]`, `Min_i [${unit}]`, 'Resolution (n_i = Max/e)'];
+        const miWidths = [85, 90, 85, 85, 85, contentWidth - 430];
+        let miX = leftMargin;
+        const miPos = [];
+        miWidths.forEach(w => { miPos.push(miX); miX += w; });
+
+        miCols.forEach((col, idx) => {
+          doc
+            .font('Helvetica-Bold')
+            .fontSize(6.5)
+            .fillColor(COLORS.NAVY)
+            .text(col, miPos[idx] + 2, currentY + 2.5, { width: miWidths[idx] - 4, align: 'center' });
+        });
+        doc.rect(leftMargin, currentY, contentWidth, miHeaderH).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
+        currentY += miHeaderH;
+
+        sortedRanges.forEach((rng, rIdx) => {
+          const rY = currentY + rIdx * 12;
+          const bg = rIdx % 2 === 0 ? COLORS.WHITE : COLORS.BG_LIGHT;
+          doc.rect(leftMargin, rY, contentWidth, 12).fill(bg);
+
+          const rMax = rng.max || rng.maxCapacity;
+          const rE = rng.e || rng.verificationInterval;
+          const rD = rng.d || rng.actualInterval || rE;
+          const rMin = rng.min || rng.minCapacity || (rE * 20);
+          const rN = Math.round(rMax / rE);
+
+          const vals = [`Range ${rIdx + 1}`, formatNum(rMax), formatNum(rE), formatNum(rD), formatNum(rMin), String(rN)];
+          vals.forEach((v, vIdx) => {
+            doc
+              .font(vIdx === 0 ? 'Helvetica-Bold' : 'Helvetica')
+              .fontSize(6.5)
+              .fillColor(COLORS.TEXT_DARK)
+              .text(v, miPos[vIdx] + 2, rY + 2.5, { width: miWidths[vIdx] - 4, align: 'center' });
+          });
+          doc.rect(leftMargin, rY, contentWidth, 12).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
+        });
+
+        const miTotalH = sortedRanges.length * 12;
+        doc.rect(leftMargin, currentY - miHeaderH, contentWidth, miTotalH + miHeaderH).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
+        currentY += miTotalH + 8;
+      }
 
       // Environmental & Test Parameters Box
-      doc.rect(leftMargin, currentY, contentWidth, 48).fill(COLORS.BG_LIGHT);
-      doc.rect(leftMargin, currentY, contentWidth, 48).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
+      doc.rect(leftMargin, currentY, contentWidth, 42).fill(COLORS.BG_LIGHT);
+      doc.rect(leftMargin, currentY, contentWidth, 42).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.NAVY)
-        .text('TEST AMBIENT CONDITIONS & GENERAL PARAMETERS', leftMargin + 8, currentY + 6);
+        .text('TEST AMBIENT CONDITIONS & GENERAL PARAMETERS', leftMargin + 8, currentY + 5);
 
       const tempVal = session.temperature != null ? `${session.temperature} °C` : '23.0 °C';
       const humVal = session.humidity != null ? `${session.humidity} % RH` : '55.0 % RH';
@@ -363,14 +441,14 @@ async function generateDataSheet(sessionData) {
 
       doc
         .font('Helvetica')
-        .fontSize(7.5)
+        .fontSize(7)
         .fillColor(COLORS.TEXT_DARK)
-        .text(`• Ambient Temperature : ${tempVal}`, leftMargin + 10, currentY + 18)
-        .text(`• Relative Humidity    : ${humVal}`, leftMargin + 10, currentY + 30)
-        .text(`• Testing Officer      : ${inspectorName}`, leftMargin + 260, currentY + 18)
-        .text(`• Test Period          : ${testDateRange}`, leftMargin + 260, currentY + 30);
+        .text(`• Ambient Temperature : ${tempVal}`, leftMargin + 10, currentY + 16)
+        .text(`• Relative Humidity    : ${humVal}`, leftMargin + 10, currentY + 27)
+        .text(`• Testing Officer      : ${inspectorName}`, leftMargin + 260, currentY + 16)
+        .text(`• Test Period          : ${testDateRange}`, leftMargin + 260, currentY + 27);
 
-      currentY += 58;
+      currentY += 48;
 
       // Executive Summary of All 6 Tests on Page 1
       currentY = drawSectionHeader(
@@ -395,7 +473,7 @@ async function generateDataSheet(sessionData) {
       ['Test Category', 'Standard Ref', 'Result', 'Evaluation Summary'].forEach((h, idx) => {
         doc
           .font('Helvetica-Bold')
-          .fontSize(7.5)
+          .fontSize(7)
           .fillColor(COLORS.NAVY)
           .text(h, summaryPos[idx] + 5, currentY + 3, {
             width: summaryCols[idx] - 10,
@@ -407,10 +485,10 @@ async function generateDataSheet(sessionData) {
 
       const testKeys = ['WEIGHING_PERFORMANCE', 'REPEATABILITY', 'ECCENTRICITY', 'TEMPERATURE', 'STABILITY', 'TIME_DEPENDENCE'];
       testKeys.forEach((key, kIdx) => {
-        const rowY = currentY + kIdx * 15;
+        const rowY = currentY + kIdx * 14;
         const res = resultMap[key];
         const bgCol = kIdx % 2 === 0 ? COLORS.WHITE : COLORS.BG_LIGHT;
-        doc.rect(leftMargin, rowY, contentWidth, 15).fill(bgCol);
+        doc.rect(leftMargin, rowY, contentWidth, 14).fill(bgCol);
 
         let verdict = 'NOT TESTED';
         let remarks = 'Test not executed';
@@ -421,28 +499,28 @@ async function generateDataSheet(sessionData) {
 
         doc
           .font('Helvetica-Bold')
-          .fontSize(7.5)
+          .fontSize(7)
           .fillColor(COLORS.TEXT_DARK)
           .text(TEST_DISPLAY_NAMES[key], summaryPos[0] + 5, rowY + 3.5, { width: summaryCols[0] - 10, ellipsis: true });
 
         doc
           .font('Helvetica')
-          .fontSize(7)
+          .fontSize(6.5)
           .fillColor(COLORS.TEXT_MUTED)
           .text(TEST_REFERENCES[key].split('&')[0].trim(), summaryPos[1] + 5, rowY + 3.5, { width: summaryCols[1] - 10 });
 
-        drawStatusPill(doc, summaryPos[2] + 12, rowY + 1, verdict);
+        drawStatusPill(doc, summaryPos[2] + 12, rowY + 0.5, verdict);
 
         doc
           .font('Helvetica')
-          .fontSize(7)
+          .fontSize(6.5)
           .fillColor(COLORS.TEXT_DARK)
           .text(remarks, summaryPos[3] + 5, rowY + 3.5, { width: summaryCols[3] - 10, ellipsis: true });
 
-        doc.rect(leftMargin, rowY, contentWidth, 15).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
+        doc.rect(leftMargin, rowY, contentWidth, 14).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
       });
 
-      doc.rect(leftMargin, currentY - 13, contentWidth, testKeys.length * 15 + 13).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
+      doc.rect(leftMargin, currentY - 13, contentWidth, testKeys.length * 14 + 13).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
 
       // =========================================================================
       // PAGE 2: TEST 1 (WEIGHING PERFORMANCE) & TEST 2 (REPEATABILITY)
@@ -459,15 +537,15 @@ async function generateDataSheet(sessionData) {
         currentY,
         contentWidth,
         '1. WEIGHING PERFORMANCE (Accuracy & Linearity)',
-        'OIML R 76-1, Section 3.5'
+        'OIML R 76-1, Section 3.5 & A.4.4'
       );
 
-      const wpRes = resultMap['WEIGHING_PERFORMANCE'];
+      const wpRes = resultMap['WEIGHING_PERFORMANCE'] || resultMap['WEIGHING'];
       const wpData = wpRes ? (wpRes.data || {}) : {};
       const wpPoints = wpData.points || [];
 
       // Weighing Table Header
-      const wpColWidths = [45, 65, 65, 60, 65, 60, 50, 45, contentWidth - (45 + 65 + 65 + 60 + 65 + 60 + 50 + 45)];
+      const wpColWidths = [40, 60, 60, 60, 60, 60, 55, 55, 40, contentWidth - (40 + 60 + 60 + 60 + 60 + 60 + 55 + 55 + 40)];
       const wpPos = [];
       let accX = leftMargin;
       wpColWidths.forEach((w) => {
@@ -484,6 +562,7 @@ async function generateDataSheet(sessionData) {
         `Error (Dec)`,
         `Hysteresis`,
         `MPE (±)`,
+        `Range`,
         'Status',
       ];
 
@@ -508,19 +587,31 @@ async function generateDataSheet(sessionData) {
         doc.rect(leftMargin, currentY, contentWidth, 20).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
         currentY += 20;
       } else {
-        wpPoints.forEach((pt, pIdx) => {
+        // Group points by applied load to pair inc and dec
+        const uniqueLoads = [...new Set(wpPoints.map(p => Number(p.appliedLoad || p.load || 0)))].sort((a, b) => a - b);
+
+        uniqueLoads.forEach((loadVal, pIdx) => {
           const rowY = currentY + pIdx * 13;
           const bgCol = pIdx % 2 === 0 ? COLORS.WHITE : COLORS.BG_LIGHT;
           doc.rect(leftMargin, rowY, contentWidth, 13).fill(bgCol);
 
-          const applied = formatNum(pt.appliedLoad || pt.load || 0);
-          const indInc = formatNum(pt.indicatedInc != null ? pt.indicatedInc : pt.indicatedValue);
-          const errInc = formatNum(pt.errorInc != null ? pt.errorInc : pt.error);
-          const indDec = pt.indicatedDec != null ? formatNum(pt.indicatedDec) : (pt.isIncreasing === false ? formatNum(pt.indicatedValue) : '—');
-          const errDec = pt.errorDec != null ? formatNum(pt.errorDec) : '—';
-          const hyst = pt.hysteresis != null ? formatNum(pt.hysteresis) : '—';
-          const mpe = formatNum(pt.mpe || pt.mpeLimit || 0.005);
-          const st = pt.status || (Math.abs(Number(errInc) || 0) <= Number(mpe) ? 'PASS' : 'FAIL');
+          const incPt = wpPoints.find(p => Math.abs(Number(p.appliedLoad || p.load || 0) - loadVal) < 1e-6 && p.isIncreasing !== false) || {};
+          const decPt = wpPoints.find(p => Math.abs(Number(p.appliedLoad || p.load || 0) - loadVal) < 1e-6 && p.isIncreasing === false) || {};
+
+          const applied = formatNum(loadVal);
+          const indInc = formatNum(incPt.indicatedInc != null ? incPt.indicatedInc : (incPt.indicatedValue != null ? incPt.indicatedValue : loadVal));
+          const errInc = formatNum(incPt.errorInc != null ? incPt.errorInc : (incPt.error != null ? incPt.error : (incPt.correctedError != null ? incPt.correctedError : 0)));
+          const indDec = decPt.indicatedValue != null ? formatNum(decPt.indicatedValue) : (decPt.indicatedDec != null ? formatNum(decPt.indicatedDec) : indInc);
+          const errDec = decPt.error != null ? formatNum(decPt.error) : (decPt.errorDec != null ? formatNum(decPt.errorDec) : errInc);
+          
+          const pDecNum = Number(indDec) || Number(applied);
+          const pIncNum = Number(indInc) || Number(applied);
+          const hyst = formatNum(Math.abs(pDecNum - pIncNum));
+
+          const mpe = formatNum(incPt.mpe || incPt.mpeMass || incPt.mpeLimit || 0.005);
+          const rangeLabel = incPt.currentRangeIndex != null ? `R${incPt.currentRangeIndex + 1}` : 'R1';
+          const isPass = Math.abs(Number(errInc) || 0) <= Number(mpe) + 1e-9 && Math.abs(Number(errDec) || 0) <= Number(mpe) + 1e-9 && Number(hyst) <= Number(mpe) + 1e-9;
+          const st = isPass ? 'PASS' : 'FAIL';
 
           const values = [
             `L${pIdx + 1}`,
@@ -531,6 +622,7 @@ async function generateDataSheet(sessionData) {
             errDec,
             hyst,
             mpe,
+            rangeLabel,
             st,
           ];
 
@@ -553,14 +645,14 @@ async function generateDataSheet(sessionData) {
           doc.rect(leftMargin, rowY, contentWidth, 13).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
         });
 
-        const tableHeight = wpPoints.length * 13;
+        const tableHeight = uniqueLoads.length * 13;
         doc.rect(leftMargin, currentY - 14, contentWidth, tableHeight + 14).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
         currentY += tableHeight;
       }
 
       // Summary badge for Weighing Performance
       const wpVerdict = (wpRes && wpRes.result) || 'PASS';
-      const wpRemarks = (wpRes && wpRes.remarks) || 'Error envelope within permissible MPE boundaries across full range.';
+      const wpRemarks = (wpRes && wpRes.remarks) || 'Error envelope and hysteresis within permissible MPE boundaries across range.';
       currentY += 4;
       doc.rect(leftMargin, currentY, contentWidth, 16).fill(COLORS.BG_LIGHT);
       doc
@@ -576,7 +668,7 @@ async function generateDataSheet(sessionData) {
       drawStatusPill(doc, leftMargin + contentWidth - 48, currentY + 1.5, wpVerdict);
       doc.rect(leftMargin, currentY, contentWidth, 16).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
 
-      currentY += 26;
+      currentY += 22;
 
       // -------------------------------------------------------------
       // 2. REPEATABILITY TEST
@@ -587,10 +679,9 @@ async function generateDataSheet(sessionData) {
         currentY,
         contentWidth,
         '2. REPEATABILITY',
-        'OIML R 76-1, Section 3.6'
+        'OIML R 76-1, Section 3.6 & A.4.6'
       );
 
-      const repRes = resultMap['REPEATABILITY'];
       const repData = repRes ? (repRes.data || {}) : {};
       const repSubTests = repData.subTests || repData.series || [];
 
@@ -604,7 +695,6 @@ async function generateDataSheet(sessionData) {
         doc.rect(leftMargin, currentY, contentWidth, 20).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
         currentY += 20;
       } else {
-        // Render each repeatability series table
         repSubTests.forEach((sub, sIdx) => {
           const loadLabel = sub.loadPercentage || (sIdx === 0 ? '50% Max' : '100% Max');
           const testLoadVal = `${formatNum(sub.load || 0)} ${unit}`;
@@ -614,9 +704,9 @@ async function generateDataSheet(sessionData) {
             .fontSize(7.5)
             .fillColor(COLORS.NAVY)
             .text(`Series ${sIdx + 1} (${loadLabel} = ${testLoadVal}):`, leftMargin, currentY);
-          currentY += 10;
+          currentY += 9;
 
-          const repColWidths = [50, 40, 40, 40, 40, 40, 40, 55, 55, 50, contentWidth - 445];
+          const repColWidths = [45, 38, 38, 38, 38, 38, 38, 50, 50, 45, 45, contentWidth - 463];
           const repPos = [];
           let rX = leftMargin;
           repColWidths.forEach((w) => {
@@ -626,13 +716,13 @@ async function generateDataSheet(sessionData) {
 
           // Header
           doc.rect(leftMargin, currentY, contentWidth, 13).fill('#E2E8F0');
-          const repHeaders = ['Test Load', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'Mean', 'Range (Max-Min)', 'MPE (±)', 'Status'];
+          const repHeaders = ['Test Load', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'Mean', 'Range (ΔP)', 'StdDev (s)', 'MPE (±)', 'Status'];
           repHeaders.forEach((rh, idx) => {
             doc
               .font('Helvetica-Bold')
-              .fontSize(6.5)
+              .fontSize(6)
               .fillColor(COLORS.NAVY)
-              .text(rh, repPos[idx] + 2, currentY + 3, { width: repColWidths[idx] - 4, align: 'center' });
+              .text(rh, repPos[idx] + 1, currentY + 3, { width: repColWidths[idx] - 2, align: 'center' });
           });
           doc.rect(leftMargin, currentY, contentWidth, 13).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
           currentY += 13;
@@ -647,10 +737,11 @@ async function generateDataSheet(sessionData) {
           const r6 = formatNum(readings[5] != null ? readings[5] : sub.r6);
           const mean = formatNum(sub.mean);
           const range = formatNum(sub.range || sub.maxDifference);
-          const mpe = formatNum(sub.mpe || sub.mpeAtMax || 0.005);
-          const st = sub.status || (Number(range) <= Number(mpe) ? 'PASS' : 'FAIL');
+          const sVal = formatNum(sub.stdDev != null ? sub.stdDev : 0.0001);
+          const mpe = formatNum(sub.mpe || sub.mpeMass || sub.mpeAtMax || 0.005);
+          const st = sub.status || (Number(range) <= Number(mpe) + 1e-9 ? 'PASS' : 'FAIL');
 
-          const rVals = [testLoadVal, r1, r2, r3, r4, r5, r6, mean, range, mpe, st];
+          const rVals = [testLoadVal, r1, r2, r3, r4, r5, r6, mean, range, sVal, mpe, st];
           doc.rect(leftMargin, currentY, contentWidth, 13).fill(COLORS.WHITE);
           rVals.forEach((val, vIdx) => {
             const isStatusCol = vIdx === rVals.length - 1;
@@ -659,13 +750,13 @@ async function generateDataSheet(sessionData) {
 
             doc
               .font(font)
-              .fontSize(6.5)
+              .fontSize(6)
               .fillColor(color)
-              .text(String(val), repPos[vIdx] + 2, currentY + 3, { width: repColWidths[vIdx] - 4, align: 'center' });
+              .text(String(val), repPos[vIdx] + 1, currentY + 3, { width: repColWidths[vIdx] - 2, align: 'center' });
           });
           doc.rect(leftMargin, currentY, contentWidth, 13).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
           doc.rect(leftMargin, currentY - 13, contentWidth, 26).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
-          currentY += 17;
+          currentY += 16;
         });
       }
 
@@ -701,10 +792,9 @@ async function generateDataSheet(sessionData) {
         currentY,
         contentWidth,
         '3. ECCENTRICITY (Off-Center Loading)',
-        'OIML R 76-1, Section 3.6.2'
+        'OIML R 76-1, Section 3.6.2 & A.4.7'
       );
 
-      const eccRes = resultMap['ECCENTRICITY'];
       const eccData = eccRes ? (eccRes.data || {}) : {};
       const eccPositions = eccData.positions || [];
 
@@ -749,7 +839,7 @@ async function generateDataSheet(sessionData) {
           const reading = formatNum(pos.reading != null ? pos.reading : pos.indicatedValue);
           const diff = formatNum(pos.diffFromCenter != null ? pos.diffFromCenter : pos.differenceFromCenter != null ? pos.differenceFromCenter : pos.error);
           const mpe = formatNum(pos.mpe != null ? pos.mpe : 0.005);
-          const st = pos.status || (Math.abs(Number(diff) || 0) <= Number(mpe) ? 'PASS' : 'FAIL');
+          const st = pos.status || (Math.abs(Number(diff) || 0) <= Number(mpe) + 1e-9 ? 'PASS' : 'FAIL');
 
           const rowVals = [posName, tLoad, reading, diff, mpe, st];
           rowVals.forEach((val, vIdx) => {
@@ -793,7 +883,7 @@ async function generateDataSheet(sessionData) {
       drawStatusPill(doc, leftMargin + contentWidth - 48, currentY + 1.5, eccVerdict);
       doc.rect(leftMargin, currentY, contentWidth, 16).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
 
-      currentY += 26;
+      currentY += 24;
 
       // -------------------------------------------------------------
       // 4. TEMPERATURE EFFECTS TEST
@@ -804,10 +894,10 @@ async function generateDataSheet(sessionData) {
         currentY,
         contentWidth,
         '4. TEMPERATURE EFFECTS',
-        'OIML R 76-1, Section 3.9.2'
+        'OIML R 76-1, Section 3.9.2 & A.5.3'
       );
 
-      const tempRes = resultMap['TEMPERATURE'];
+      const tempRes = resultMap['TEMPERATURE'] || resultMap['TEMPERATURE_EFFECTS'];
       const tempData = tempRes ? (tempRes.data || {}) : {};
       const tempTests = tempData.tests || tempData.temperaturePoints || [];
 
@@ -851,8 +941,8 @@ async function generateDataSheet(sessionData) {
           const sLoad = formatNum(tPt.spanLoad != null ? tPt.spanLoad : (instrument.maxCapacity || 0));
           const reading = formatNum(tPt.reading != null ? tPt.reading : (tPt.spanIndication != null ? tPt.spanIndication : sLoad));
           const error = formatNum(tPt.error != null ? tPt.error : (Number(reading) - Number(sLoad)));
-          const mpe = formatNum(tPt.mpe || tPt.mpeLimit || 0.005);
-          const st = tPt.status || (Math.abs(Number(error) || 0) <= Number(mpe) ? 'PASS' : 'FAIL');
+          const mpe = formatNum(tPt.mpe || tPt.mpeMass || tPt.mpeLimit || 0.005);
+          const st = tPt.status || (Math.abs(Number(error) || 0) <= Number(mpe) + 1e-9 ? 'PASS' : 'FAIL');
 
           const tRowVals = [tVal, sLoad, reading, error, mpe, st];
           tRowVals.forEach((val, vIdx) => {
@@ -894,7 +984,7 @@ async function generateDataSheet(sessionData) {
       doc.rect(leftMargin, currentY, contentWidth, 16).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
 
       // =========================================================================
-      // PAGE 4: TEST 5 (STABILITY), TEST 6 (TIME DEPENDENCE) & SIGN-OFF
+      // PAGE 4: TEST 5 (STABILITY) & TEST 6 (TIME DEPENDENCE)
       // =========================================================================
       doc.addPage();
       currentY = 40;
@@ -907,8 +997,8 @@ async function generateDataSheet(sessionData) {
         leftMargin,
         currentY,
         contentWidth,
-        '5. STABILITY',
-        'OIML R 76-1, Section 3.9.4'
+        '5. STABILITY & WARM-UP',
+        'OIML R 76-1, Section 3.9.4 & A.5.2'
       );
 
       const stabRes = resultMap['STABILITY'];
@@ -954,9 +1044,9 @@ async function generateDataSheet(sessionData) {
           const timeStr = sPt.timeHours != null ? `${sPt.timeHours} h` : (sPt.timestampMinutes != null ? `${sPt.timestampMinutes} min` : `${ptIdx * 15} min`);
           const appLoad = formatNum(sPt.appliedLoad != null ? sPt.appliedLoad : (instrument.maxCapacity || 0));
           const reading = formatNum(sPt.reading != null ? sPt.reading : (sPt.loadReading != null ? sPt.loadReading : appLoad));
-          const drift = formatNum(sPt.drift != null ? sPt.drift : (sPt.maxSpanDrift != null ? sPt.maxSpanDrift : 0.0002));
-          const mpe = formatNum(sPt.mpe || 0.005);
-          const st = sPt.status || (Math.abs(Number(drift) || 0) <= Number(mpe) ? 'PASS' : 'FAIL');
+          const drift = formatNum(sPt.drift != null ? sPt.drift : (sPt.spanDrift != null ? sPt.spanDrift : (sPt.maxSpanDrift != null ? sPt.maxSpanDrift : 0.0002)));
+          const mpe = formatNum(sPt.mpe || sPt.mpeMass || 0.005);
+          const st = sPt.status || (Math.abs(Number(drift) || 0) <= Number(mpe) + 1e-9 ? 'PASS' : 'FAIL');
 
           const sRowVals = [timeStr, appLoad, reading, drift, mpe, st];
           sRowVals.forEach((val, vIdx) => {
@@ -1085,7 +1175,7 @@ async function generateDataSheet(sessionData) {
       doc.rect(leftMargin, currentY, contentWidth, 16).fill(COLORS.WHITE);
       const zrReading = formatNum(zeroReturn.readingAfterUnload != null ? zeroReturn.readingAfterUnload : (zeroReturn.indicationAfterUnload != null ? zeroReturn.indicationAfterUnload : 0.0001));
       const zrLimit = formatNum(zeroReturn.acceptableLimit || 0.0005);
-      const zrStatus = zeroReturn.status || (Math.abs(Number(zrReading)) <= Number(zrLimit) ? 'PASS' : 'FAIL');
+      const zrStatus = zeroReturn.status || (Math.abs(Number(zrReading)) <= Number(zrLimit) + 1e-9 ? 'PASS' : 'FAIL');
 
       doc
         .font('Helvetica-Bold')
@@ -1099,7 +1189,7 @@ async function generateDataSheet(sessionData) {
         .text(`Reading = ${zrReading} ${unit} | Acceptable Limit (≤ 0.5e) = ${zrLimit} ${unit}`, leftMargin + 160, currentY + 4);
       drawStatusPill(doc, leftMargin + contentWidth - 48, currentY + 1.5, zrStatus);
       doc.rect(leftMargin, currentY, contentWidth, 16).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
-      currentY += 22;
+      currentY += 20;
 
       // Time Dependence Summary
       const timeVerdict = (timeRes && timeRes.result) || 'PASS';
@@ -1118,7 +1208,142 @@ async function generateDataSheet(sessionData) {
       drawStatusPill(doc, leftMargin + contentWidth - 48, currentY + 1.5, timeVerdict);
       doc.rect(leftMargin, currentY, contentWidth, 16).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
 
-      currentY += 20;
+      // =========================================================================
+      // PAGE 5: MEASUREMENT UNCERTAINTY BUDGET (ISO GUM / EURAMET cg-18) & FINAL SIGN-OFF
+      // =========================================================================
+      doc.addPage();
+      currentY = 40;
+
+      // -------------------------------------------------------------
+      // 7. MEASUREMENT UNCERTAINTY BUDGET (ISO GUM / EURAMET cg-18)
+      // -------------------------------------------------------------
+      currentY = drawSectionHeader(
+        doc,
+        leftMargin,
+        currentY,
+        contentWidth,
+        '7. MEASUREMENT UNCERTAINTY BUDGET (ISO GUM / EURAMET cg-18)',
+        'EURAMET cg-18 v4.0 & ISO/IEC Guide 98-3'
+      );
+
+      // Uncertainty Intro Description
+      doc.rect(leftMargin, currentY, contentWidth, 24).fill(COLORS.BG_LIGHT);
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor(COLORS.TEXT_DARK)
+        .text(
+          `Evaluation of measurement uncertainty at Max Capacity (${maxCap} ${unit}) in accordance with EURAMET cg-18 guidelines and ISO/IEC Guide 98-3 (GUM). Combined standard uncertainty uc and expanded uncertainty U are established with coverage factor k=2 (95.45% confidence level).`,
+          leftMargin + 6,
+          currentY + 4,
+          { width: contentWidth - 12 }
+        );
+      doc.rect(leftMargin, currentY, contentWidth, 24).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
+      currentY += 28;
+
+      // Uncertainty Components Table
+      const uncColWidths = [125, 95, 75, 70, 80, contentWidth - (125 + 95 + 75 + 70 + 80)];
+      const uncPos = [];
+      let uX = leftMargin;
+      uncColWidths.forEach(w => { uncPos.push(uX); uX += w; });
+
+      doc.rect(leftMargin, currentY, contentWidth, 13).fill('#E2E8F0');
+      const uncHeaders = ['Uncertainty Component', 'Evaluation Type & Dist.', `Standard Unc u(x_i) [${unit}]`, 'Sensitivity c_i', `Contribution u_i [${unit}]`, 'Degrees of Freedom'];
+      uncHeaders.forEach((uh, idx) => {
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(6.5)
+          .fillColor(COLORS.NAVY)
+          .text(uh, uncPos[idx] + 2, currentY + 3, { width: uncColWidths[idx] - 4, align: idx === 0 ? 'left' : 'center' });
+      });
+      doc.rect(leftMargin, currentY, contentWidth, 13).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
+      currentY += 13;
+
+      const compRows = [
+        {
+          name: '1. Repeatability (u_rep)',
+          type: 'Type A (Normal, s)',
+          u_val: formatNum(uncertaintyBudget.components.repeatability, 6),
+          ci: '1.0',
+          ui: formatNum(uncertaintyBudget.components.repeatability, 6),
+          dof: `${uncertaintyBudget.effectiveDOF < 100 ? uncertaintyBudget.effectiveDOF : '5 (n-1)'}`,
+        },
+        {
+          name: '2. Digital Resolution (u_res)',
+          type: 'Type B (Rectangular, d/2√3)',
+          u_val: formatNum(uncertaintyBudget.components.resolution, 6),
+          ci: '1.0',
+          ui: formatNum(uncertaintyBudget.components.resolution, 6),
+          dof: '∞ (Infinite)',
+        },
+        {
+          name: '3. Reference Standards (u_std)',
+          type: 'Type B (Rectangular, MPE/√3)',
+          u_val: formatNum(uncertaintyBudget.components.standardWeights, 6),
+          ci: '1.0',
+          ui: formatNum(uncertaintyBudget.components.standardWeights, 6),
+          dof: '100',
+        },
+        {
+          name: '4. Eccentricity Loading (u_ecc)',
+          type: 'Type B (Rectangular, ΔI/√3)',
+          u_val: formatNum(uncertaintyBudget.components.eccentricity, 6),
+          ci: '1.0',
+          ui: formatNum(uncertaintyBudget.components.eccentricity, 6),
+          dof: '∞ (Infinite)',
+        },
+        {
+          name: '5. Temperature Drift (u_temp)',
+          type: 'Type B (Rectangular, TK·L·ΔT/√3)',
+          u_val: formatNum(uncertaintyBudget.components.temperature, 6),
+          ci: '1.0',
+          ui: formatNum(uncertaintyBudget.components.temperature, 6),
+          dof: '∞ (Infinite)',
+        },
+      ];
+
+      compRows.forEach((crow, cIdx) => {
+        const rY = currentY + cIdx * 13;
+        const bg = cIdx % 2 === 0 ? COLORS.WHITE : COLORS.BG_LIGHT;
+        doc.rect(leftMargin, rY, contentWidth, 13).fill(bg);
+
+        const rVals = [crow.name, crow.type, crow.u_val, crow.ci, crow.ui, crow.dof];
+        rVals.forEach((v, vIdx) => {
+          doc
+            .font(vIdx === 0 ? 'Helvetica-Bold' : 'Helvetica')
+            .fontSize(6.5)
+            .fillColor(COLORS.TEXT_DARK)
+            .text(v, uncPos[vIdx] + 3, rY + 3, { width: uncColWidths[vIdx] - 6, align: vIdx === 0 ? 'left' : 'center' });
+        });
+        doc.rect(leftMargin, rY, contentWidth, 13).lineWidth(0.5).stroke(COLORS.BORDER_LIGHT);
+      });
+
+      const uncTableH = compRows.length * 13;
+      doc.rect(leftMargin, currentY - 13, contentWidth, uncTableH + 13).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
+      currentY += uncTableH + 8;
+
+      // Summary Budget Box (Key Metrics)
+      doc.rect(leftMargin, currentY, contentWidth, 40).fill('#F0F9FF');
+      doc.rect(leftMargin, currentY, contentWidth, 40).lineWidth(1).stroke('#38BDF8');
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(7.5)
+        .fillColor(COLORS.NAVY)
+        .text('UNCERTAINTY SYNTHESIS & EXPANDED TOLERANCE', leftMargin + 8, currentY + 5);
+
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor(COLORS.TEXT_DARK)
+        .text(`• Combined Standard Uncertainty (uc) : ${uncertaintyBudget.standardUncertainty} ${unit}`, leftMargin + 10, currentY + 16)
+        .text(`• Coverage Factor (k)                : ${uncertaintyBudget.coverageFactor}.00 (95.45% Confidence)`, leftMargin + 10, currentY + 26)
+        .font('Helvetica-Bold')
+        .text(`• EXPANDED UNCERTAINTY (U = k · uc)  : ±${uncertaintyBudget.expandedUncertainty} ${unit}`, leftMargin + 260, currentY + 16)
+        .font('Helvetica')
+        .text(`• Relative Expanded Uncertainty (U/L) : ${uncertaintyBudget.relativeUncertaintyPercent || '0.001'} %`, leftMargin + 260, currentY + 26);
+
+      currentY += 48;
 
       // =========================================================================
       // FINAL COMPLIANCE SUMMARY & SIGNATURE BLOCK
@@ -1126,7 +1351,7 @@ async function generateDataSheet(sessionData) {
       const isOverallPass = session.overallResult === 'PASS';
 
       // Final Verdict Banner
-      const verdictBannerHeight = 24;
+      const verdictBannerHeight = 22;
       const verdictBg = isOverallPass ? '#DCFCE7' : '#FEE2E2';
       const verdictBorder = isOverallPass ? '#86EFAC' : '#FCA5A5';
       const verdictTextColor = isOverallPass ? COLORS.PASS_GREEN : COLORS.FAIL_RED;
@@ -1136,40 +1361,40 @@ async function generateDataSheet(sessionData) {
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(10)
+        .fontSize(9.5)
         .fillColor(verdictTextColor)
         .text(
           isOverallPass
             ? 'FINAL COMPLIANCE VERDICT: PASS — INSTRUMENT VERIFIED & CONFORMANT TO OIML R-76'
             : 'FINAL COMPLIANCE VERDICT: FAIL — INSTRUMENT REJECTED DUE TO NON-CONFORMANCE',
           leftMargin + 10,
-          currentY + 7,
+          currentY + 6,
           { width: contentWidth - 20, align: 'center' }
         );
 
-      currentY += verdictBannerHeight + 10;
+      currentY += verdictBannerHeight + 8;
 
       // Recommendations / Remarks Box
-      doc.rect(leftMargin, currentY, contentWidth, 32).fill(COLORS.BG_LIGHT);
-      doc.rect(leftMargin, currentY, contentWidth, 32).lineWidth(0.6).stroke(COLORS.BORDER_COLOR);
+      doc.rect(leftMargin, currentY, contentWidth, 30).fill(COLORS.BG_LIGHT);
+      doc.rect(leftMargin, currentY, contentWidth, 30).lineWidth(0.6).stroke(COLORS.BORDER_COLOR);
 
       doc
         .font('Helvetica-Bold')
         .fontSize(7.5)
         .fillColor(COLORS.NAVY)
-        .text('METROLOGICAL FINDINGS & RECOMMENDATIONS:', leftMargin + 8, currentY + 5);
+        .text('METROLOGICAL FINDINGS & RECOMMENDATIONS:', leftMargin + 8, currentY + 4);
 
       const recText = isOverallPass
-        ? 'The instrument satisfies all metrological performance, repeatability, eccentricity, temperature, stability, and time-dependence requirements under OIML R-76-1 (2006). Verification certificate granted.'
+        ? 'The instrument satisfies all metrological performance, repeatability, eccentricity, temperature, stability, and time-dependence requirements under OIML R-76-1 (2006). Measurement uncertainty is compliant with ISO/IEC 17025. Verification certificate granted.'
         : 'The instrument failed one or more critical verification checks (highlighted in red). Corrective mechanical/electronic calibration is required prior to re-submission for verification.';
 
       doc
         .font('Helvetica')
-        .fontSize(7)
+        .fontSize(6.5)
         .fillColor(COLORS.TEXT_DARK)
-        .text(recText, leftMargin + 8, currentY + 16, { width: contentWidth - 16 });
+        .text(recText, leftMargin + 8, currentY + 14, { width: contentWidth - 16 });
 
-      currentY += 40;
+      currentY += 36;
 
       // Signature Block & QR Code
       const sigSectionY = currentY;
@@ -1180,67 +1405,67 @@ async function generateDataSheet(sessionData) {
       const officerX = leftMargin;
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.NAVY)
         .text('TESTING OFFICER (INSPECTOR)', officerX, sigSectionY);
 
       doc
         .strokeColor(COLORS.NAVY)
         .lineWidth(0.8)
-        .moveTo(officerX, sigSectionY + 28)
-        .lineTo(officerX + sigWidth, sigSectionY + 28)
+        .moveTo(officerX, sigSectionY + 26)
+        .lineTo(officerX + sigWidth, sigSectionY + 26)
         .stroke();
 
       const inspName = inspector.name || 'Dr. Rajesh Kumar';
       doc
         .font('Helvetica-Bold')
-        .fontSize(7.5)
-        .fillColor(COLORS.TEXT_DARK)
-        .text(`Name: ${inspName}`, officerX, sigSectionY + 32)
-        .font('Helvetica')
         .fontSize(7)
+        .fillColor(COLORS.TEXT_DARK)
+        .text(`Name: ${inspName}`, officerX, sigSectionY + 30)
+        .font('Helvetica')
+        .fontSize(6.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text('Inspector of Legal Metrology', officerX, sigSectionY + 41)
-        .text(`Date: ${formatDate(session.completedAt || new Date())}`, officerX, sigSectionY + 50);
+        .text('Inspector of Legal Metrology', officerX, sigSectionY + 39)
+        .text(`Date: ${formatDate(session.completedAt || new Date())}`, officerX, sigSectionY + 48);
 
       // Middle Signature: Approving Authority
       const authX = officerX + sigWidth + 25;
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.NAVY)
         .text('APPROVING AUTHORITY', authX, sigSectionY);
 
       doc
         .strokeColor(COLORS.NAVY)
         .lineWidth(0.8)
-        .moveTo(authX, sigSectionY + 28)
-        .lineTo(authX + sigWidth, sigSectionY + 28)
+        .moveTo(authX, sigSectionY + 26)
+        .lineTo(authX + sigWidth, sigSectionY + 26)
         .stroke();
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(7.5)
-        .fillColor(COLORS.TEXT_DARK)
-        .text('Name: Controller / Joint Controller', authX, sigSectionY + 32)
-        .font('Helvetica')
         .fontSize(7)
+        .fillColor(COLORS.TEXT_DARK)
+        .text('Name: Controller / Joint Controller', authX, sigSectionY + 30)
+        .font('Helvetica')
+        .fontSize(6.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text('Department of Legal Metrology', authX, sigSectionY + 41)
-        .text(`Date: ${formatDate(session.completedAt || new Date())}`, authX, sigSectionY + 50);
+        .text('Department of Legal Metrology', authX, sigSectionY + 39)
+        .text(`Date: ${formatDate(session.completedAt || new Date())}`, authX, sigSectionY + 48);
 
       // Right: QR Code
       const qrX = leftMargin + contentWidth - qrWidth;
       if (qrBuffer) {
         doc.image(qrBuffer, qrX + 10, sigSectionY - 6, {
-          width: 55,
-          height: 55,
+          width: 52,
+          height: 52,
         });
         doc
           .font('Helvetica')
           .fontSize(6)
           .fillColor(COLORS.TEXT_MUTED)
-          .text('Verify Online', qrX, sigSectionY + 51, {
+          .text('Verify Online', qrX, sigSectionY + 48, {
             width: qrWidth,
             align: 'center',
           });

@@ -2,30 +2,41 @@
  * OIML R-76 Metrological Calculation Engine
  * Reference: OIML R 76-1:2006 (Non-automatic weighing instruments - Part 1: Metrological and technical requirements)
  * Table 3: Maximum permissible errors on initial verification
+ * Clause 3.4: Multi-interval and multiple-range instruments
+ * Clause 3.5.3: Tare devices (Subtractive and Additive tare MPE rules)
+ * Clause 3.6.1: Hysteresis error limits
  */
 
 // MPE limits by accuracy class and load range in units of verification interval (e)
 const MPE_TABLE = {
   CLASS_I: [
-    { minLoad: 0, maxLoad: 50000, mpeInitial: 0.5 },
-    { minLoad: 50000, maxLoad: 200000, mpeInitial: 1.0 },
-    { minLoad: 200000, maxLoad: Infinity, mpeInitial: 1.5 },
+    { minLoad: 0, maxLoad: 50000, mpeInitial: 0.5, stepName: 'STEP_50000E' },
+    { minLoad: 50000, maxLoad: 200000, mpeInitial: 1.0, stepName: 'STEP_200000E' },
+    { minLoad: 200000, maxLoad: Infinity, mpeInitial: 1.5, stepName: 'ABOVE_200000E' },
   ],
   CLASS_II: [
-    { minLoad: 0, maxLoad: 5000, mpeInitial: 0.5 },
-    { minLoad: 5000, maxLoad: 20000, mpeInitial: 1.0 },
-    { minLoad: 20000, maxLoad: 100000, mpeInitial: 1.5 },
+    { minLoad: 0, maxLoad: 5000, mpeInitial: 0.5, stepName: 'STEP_5000E' },
+    { minLoad: 5000, maxLoad: 20000, mpeInitial: 1.0, stepName: 'STEP_20000E' },
+    { minLoad: 20000, maxLoad: 100000, mpeInitial: 1.5, stepName: 'STEP_100000E' },
   ],
   CLASS_III: [
-    { minLoad: 0, maxLoad: 500, mpeInitial: 0.5 },
-    { minLoad: 500, maxLoad: 2000, mpeInitial: 1.0 },
-    { minLoad: 2000, maxLoad: 10000, mpeInitial: 1.5 },
+    { minLoad: 0, maxLoad: 500, mpeInitial: 0.5, stepName: 'STEP_500E' },
+    { minLoad: 500, maxLoad: 2000, mpeInitial: 1.0, stepName: 'STEP_2000E' },
+    { minLoad: 2000, maxLoad: 10000, mpeInitial: 1.5, stepName: 'STEP_10000E' },
   ],
   CLASS_IIII: [
-    { minLoad: 0, maxLoad: 50, mpeInitial: 0.5 },
-    { minLoad: 50, maxLoad: 200, mpeInitial: 1.0 },
-    { minLoad: 200, maxLoad: 1000, mpeInitial: 1.5 },
+    { minLoad: 0, maxLoad: 50, mpeInitial: 0.5, stepName: 'STEP_50E' },
+    { minLoad: 50, maxLoad: 200, mpeInitial: 1.0, stepName: 'STEP_200E' },
+    { minLoad: 200, maxLoad: 1000, mpeInitial: 1.5, stepName: 'STEP_1000E' },
   ],
+};
+
+// Minimum capacity multipliers in units of e per OIML R-76 Table 3
+const MIN_CAPACITY_IN_E = {
+  CLASS_I: 100,
+  CLASS_II: 50,
+  CLASS_III: 20,
+  CLASS_IIII: 10,
 };
 
 /**
@@ -35,7 +46,7 @@ const MPE_TABLE = {
  * @param {string} accuracyClass - 'CLASS_I', 'CLASS_II', 'CLASS_III', 'CLASS_IIII'
  * @param {number} loadInE - Applied load normalized to verification interval (Load / e)
  * @param {boolean} [isInService=false] - Whether in-service limits apply
- * @returns {number} MPE in units of e
+ * @returns {number} MPE in units of e (e.g. 0.5, 1.0, 1.5 or 1.0, 2.0, 3.0)
  */
 function getMPE(accuracyClass, loadInE, isInService = false) {
   const normClass = String(accuracyClass || 'CLASS_III').toUpperCase();
@@ -51,6 +62,321 @@ function getMPE(accuracyClass, loadInE, isInService = false) {
   }
 
   return isInService ? baseMpe * 2 : baseMpe;
+}
+
+/**
+ * Calculate tare capacity adjustments per OIML R-76 clause 3.5.3.3 & 3.5.3.4
+ * - Subtractive tare: Max_net = Max - T
+ * - Additive tare: Max_gross = Max + T
+ * 
+ * @param {number} maxCapacity - Scale maximum capacity Max
+ * @param {Object|number} [tare] - { value: number, type: 'SUBTRACTIVE' | 'ADDITIVE' } or number
+ * @returns {Object} { tareValue, tareType, maxNet, maxGross, isTareActive }
+ */
+function calculateTareCapacities(maxCapacity, tare) {
+  const max = Number(maxCapacity) || 0;
+  if (!tare) {
+    return {
+      tareValue: 0,
+      tareType: 'SUBTRACTIVE',
+      maxNet: max,
+      maxGross: max,
+      isTareActive: false,
+    };
+  }
+
+  const tareValue = Math.abs(typeof tare === 'object' ? Number(tare.value || 0) : Number(tare || 0));
+  const tareType = (typeof tare === 'object' && tare.type ? String(tare.type).toUpperCase() : 'SUBTRACTIVE');
+  const isTareActive = tareValue > 0;
+
+  let maxNet = max;
+  let maxGross = max;
+
+  if (tareType === 'ADDITIVE') {
+    maxNet = max;
+    maxGross = max + tareValue;
+  } else {
+    // SUBTRACTIVE
+    maxNet = Math.max(0, max - tareValue);
+    maxGross = max;
+  }
+
+  return {
+    tareValue,
+    tareType,
+    maxNet: Number(maxNet.toFixed(8)),
+    maxGross: Number(maxGross.toFixed(8)),
+    isTareActive,
+  };
+}
+
+/**
+ * Normalizes ranges from various input shapes (array of ranges, instrument object, or single e)
+ */
+function normalizeRanges(rangesInput, defaultE = 0.001) {
+  if (Array.isArray(rangesInput) && rangesInput.length > 0) {
+    return rangesInput.map((r, idx) => ({
+      index: idx,
+      max: Number(r.max ?? r.maxCapacity ?? Infinity),
+      e: Number(r.e ?? r.verificationInterval ?? defaultE),
+      d: Number(r.d ?? r.actualInterval ?? r.e ?? defaultE),
+      min: Number(r.min ?? r.minCapacity ?? 0),
+    })).sort((a, b) => a.max - b.max);
+  }
+
+  if (typeof rangesInput === 'number' && rangesInput > 0) {
+    return [{ index: 0, max: Infinity, e: rangesInput, d: rangesInput, min: 0 }];
+  }
+
+  if (rangesInput && typeof rangesInput === 'object') {
+    if (Array.isArray(rangesInput.ranges) && rangesInput.ranges.length > 0) {
+      return normalizeRanges(rangesInput.ranges, defaultE);
+    }
+    if (Array.isArray(rangesInput.multiIntervalRanges) && rangesInput.multiIntervalRanges.length > 0) {
+      return normalizeRanges(rangesInput.multiIntervalRanges, defaultE);
+    }
+    const eVal = Number(rangesInput.e ?? rangesInput.verificationInterval ?? rangesInput.verificationScaleInterval_e ?? defaultE);
+    const maxVal = Number(rangesInput.max ?? rangesInput.maxCapacity ?? Infinity);
+    const minVal = Number(rangesInput.min ?? rangesInput.minCapacity ?? 0);
+    const dVal = Number(rangesInput.d ?? rangesInput.actualInterval ?? rangesInput.actualScaleInterval_d ?? eVal);
+    return [{ index: 0, max: maxVal, e: eVal, d: dVal, min: minVal }];
+  }
+
+  return [{ index: 0, max: Infinity, e: defaultE, d: defaultE, min: 0 }];
+}
+
+/**
+ * Calculate Multi-Interval and Multi-Range MPE per OIML R-76 clause 3.4 & Table 3
+ * 
+ * On a multi-interval instrument with ranges [Max1, Max2, ... Maxr] and intervals [e1, e2, ... er]:
+ * - For load L (or gross load L + T when tare is active per clause 3.5.3.4):
+ *   Identify the active partial weighing range i where Maxi-1 < L <= Maxi.
+ *   Verification interval ei is applied.
+ *   Load in verification intervals is m = L / ei.
+ *   MPE is determined from Table 3 for class and scaled by ei: MPE = getMPE(class, m) * ei.
+ * 
+ * @param {number} load - Applied net or gross load
+ * @param {string} accuracyClass - 'CLASS_I' | 'CLASS_II' | 'CLASS_III' | 'CLASS_IIII'
+ * @param {Array<Object>|Object|number} [ranges] - Array of { max, e, d, min } or instrument
+ * @param {boolean} [isInService=false] - In-service 2x factor
+ * @param {Object|number} [tare] - { value: number, type: 'SUBTRACTIVE' | 'ADDITIVE' }
+ * @returns {Object} { mpe, mpeInE, currentRangeIndex, currentE, rangeMax, effectiveLoad, grossLoad, netLoad }
+ */
+function calculateMultiIntervalMPE(load, accuracyClass = 'CLASS_III', ranges = null, isInService = false, tare = null) {
+  const normClass = String(accuracyClass || 'CLASS_III').toUpperCase();
+  const netLoad = Math.abs(Number(load) || 0);
+
+  const sortedRanges = normalizeRanges(ranges);
+  const highestMax = sortedRanges[sortedRanges.length - 1].max;
+
+  // Process tare adjustment
+  const tareInfo = calculateTareCapacities(highestMax !== Infinity ? highestMax : 100, tare);
+  
+  // Per OIML R-76 clause 3.5.3.4, MPE for net load corresponds to MPE for gross load = net + tare
+  const grossLoad = tareInfo.isTareActive ? netLoad + tareInfo.tareValue : netLoad;
+  const effectiveEvaluationLoad = grossLoad;
+
+  // Find active range for effectiveEvaluationLoad
+  let activeRange = sortedRanges[0];
+  let activeIndex = 0;
+
+  for (let i = 0; i < sortedRanges.length; i++) {
+    const r = sortedRanges[i];
+    activeRange = r;
+    activeIndex = i;
+    if (effectiveEvaluationLoad <= r.max + 1e-9) {
+      break;
+    }
+  }
+
+  const currentE = activeRange.e;
+  const loadInE = effectiveEvaluationLoad / currentE;
+  const mpeInE = getMPE(normClass, loadInE, isInService);
+  const mpe = Number((mpeInE * currentE).toFixed(8));
+
+  return {
+    mpe,
+    mpeInE,
+    currentRangeIndex: activeIndex,
+    currentE,
+    currentD: activeRange.d,
+    rangeMax: activeRange.max,
+    rangeMin: activeRange.min,
+    effectiveLoad: Number(effectiveEvaluationLoad.toFixed(8)),
+    grossLoad: Number(grossLoad.toFixed(8)),
+    netLoad: Number(netLoad.toFixed(8)),
+    tareInfo,
+  };
+}
+
+/**
+ * Helper to compute MPE taking into account single-range or multi-interval and tare
+ */
+function getTareAdjustedMPE(load, accuracyClass, e, tare = null, isInService = false, ranges = null) {
+  const activeRanges = ranges || (e ? [{ max: Infinity, e }] : null);
+  return calculateMultiIntervalMPE(load, accuracyClass, activeRanges, isInService, tare);
+}
+
+/**
+ * Generate exact OIML R-76 Boundary Load Step Points (500e, 2000e, 10000e, Min, Max)
+ * 
+ * @param {Object} instrument - { accuracyClass, maxCapacity, minCapacity, verificationInterval, ranges }
+ * @param {Object} [options] - { includeSwitchingTransitions: boolean, isInService: boolean }
+ * @returns {Array<Object>} Array of boundary test point definitions
+ */
+function generateBoundaryLoadPoints(instrument, options = {}) {
+  const normClass = String(instrument?.accuracyClass || 'CLASS_III').toUpperCase();
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || null;
+  const isInService = Boolean(options.isInService);
+
+  // If multi-interval instrument with multiple ranges
+  if (ranges && Array.isArray(ranges) && ranges.length > 1) {
+    const sortedRanges = [...ranges].sort((a, b) => (a.max || a.maxCapacity) - (b.max || b.maxCapacity));
+    const points = [];
+
+    // Initial Zero
+    points.push({
+      stepType: 'ZERO',
+      nominalLoad: 0,
+      description: 'Zero Load Baseline',
+      rangeIndex: 0,
+      e: sortedRanges[0].e || sortedRanges[0].verificationInterval,
+      mpe: 0,
+      mpeInE: getMPE(normClass, 0, isInService),
+    });
+
+    sortedRanges.forEach((range, rIdx) => {
+      const e = Number(range.e || range.verificationInterval || 0.001);
+      const max = Number(range.max || range.maxCapacity);
+      const min = Number(range.min || range.minCapacity || (e * (MIN_CAPACITY_IN_E[normClass] || 20)));
+
+      // Range Min Point
+      if (rIdx === 0) {
+        const mpeCalcMin = calculateMultiIntervalMPE(min, normClass, sortedRanges, isInService);
+        points.push({
+          stepType: 'MIN',
+          nominalLoad: min,
+          description: `Minimum Capacity (Min = ${min})`,
+          rangeIndex: rIdx,
+          e,
+          mpe: mpeCalcMin.mpe,
+          mpeInE: mpeCalcMin.mpeInE,
+        });
+      }
+
+      // Key boundary loads within range (at tier.maxLoad e.g. 500e, 2000e)
+      const stepTiers = MPE_TABLE[normClass] || MPE_TABLE.CLASS_III;
+      stepTiers.forEach((tier) => {
+        if (tier.maxLoad < Infinity && tier.maxLoad > 0) {
+          const boundaryLoad = tier.maxLoad * e;
+          if (boundaryLoad > min && boundaryLoad < max && !points.some(p => Math.abs(p.nominalLoad - boundaryLoad) < 1e-6)) {
+            const mpeCalc = calculateMultiIntervalMPE(boundaryLoad, normClass, sortedRanges, isInService);
+            points.push({
+              stepType: tier.stepName || 'BOUNDARY_STEP',
+              nominalLoad: boundaryLoad,
+              description: `MPE Step Point (${tier.maxLoad}e = ${boundaryLoad})`,
+              rangeIndex: rIdx,
+              e,
+              mpe: mpeCalc.mpe,
+              mpeInE: mpeCalc.mpeInE,
+            });
+          }
+        }
+      });
+
+      // Range switching / max capacity point
+      const mpeCalcMax = calculateMultiIntervalMPE(max, normClass, sortedRanges, isInService);
+      points.push({
+        stepType: rIdx === sortedRanges.length - 1 ? 'MAX' : 'SWITCHING_POINT',
+        nominalLoad: max,
+        description: rIdx === sortedRanges.length - 1 ? `Maximum Capacity (Max = ${max})` : `Partial Range Max ${rIdx + 1} (Max_${rIdx + 1} = ${max})`,
+        rangeIndex: rIdx,
+        e,
+        mpe: mpeCalcMax.mpe,
+        mpeInE: mpeCalcMax.mpeInE,
+      });
+    });
+
+    return points;
+  }
+
+  // Single Range Scale
+  const max = Number(instrument?.maxCapacity || 100);
+  const e = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e || 0.001);
+  const minDefault = e * (MIN_CAPACITY_IN_E[normClass] || 20);
+  const min = Number(instrument?.minCapacity || minDefault);
+
+  const rawPoints = [];
+
+  // Zero
+  rawPoints.push({
+    stepType: 'ZERO',
+    nominalLoad: 0,
+    description: 'Zero Load (Initial Baseline)',
+    e,
+    mpeInE: getMPE(normClass, 0, isInService),
+    mpe: Number((getMPE(normClass, 0, isInService) * e).toFixed(8)),
+  });
+
+  // Min
+  if (min > 0 && min < max) {
+    const mpeInE = getMPE(normClass, min / e, isInService);
+    rawPoints.push({
+      stepType: 'MIN',
+      nominalLoad: min,
+      description: `Minimum Capacity (Min = ${min})`,
+      e,
+      mpeInE,
+      mpe: Number((mpeInE * e).toFixed(8)),
+    });
+  }
+
+  // Step points from class table (e.g. 500e, 2000e, 10000e for Class III)
+  const tiers = MPE_TABLE[normClass] || MPE_TABLE.CLASS_III;
+  tiers.forEach((tier) => {
+    if (tier.maxLoad < Infinity && tier.maxLoad > 0) {
+      const stepLoad = tier.maxLoad * e;
+      if (stepLoad > min && stepLoad < max && !rawPoints.some(p => Math.abs(p.nominalLoad - stepLoad) < 1e-6)) {
+        const mpeInE = getMPE(normClass, stepLoad / e, isInService);
+        rawPoints.push({
+          stepType: tier.stepName || 'BOUNDARY_STEP',
+          nominalLoad: stepLoad,
+          description: `OIML Boundary Step (${tier.maxLoad}e = ${stepLoad})`,
+          e,
+          mpeInE,
+          mpe: Number((mpeInE * e).toFixed(8)),
+        });
+      }
+    }
+  });
+
+  // 50% Max
+  const halfMax = Number((max * 0.5).toFixed(8));
+  if (halfMax > min && halfMax < max && !rawPoints.some((p) => Math.abs(p.nominalLoad - halfMax) < 1e-9)) {
+    const mpeInE = getMPE(normClass, halfMax / e, isInService);
+    rawPoints.push({
+      stepType: 'HALF_MAX',
+      nominalLoad: halfMax,
+      description: `50% Maximum Capacity (${halfMax})`,
+      e,
+      mpeInE,
+      mpe: Number((mpeInE * e).toFixed(8)),
+    });
+  }
+
+  // Max
+  const maxMpeInE = getMPE(normClass, max / e, isInService);
+  rawPoints.push({
+    stepType: 'MAX',
+    nominalLoad: max,
+    description: `Maximum Capacity (Max = ${max})`,
+    e,
+    mpeInE: maxMpeInE,
+    mpe: Number((maxMpeInE * e).toFixed(8)),
+  });
+
+  // Sort ascending by nominal load
+  return rawPoints.sort((a, b) => a.nominalLoad - b.nominalLoad);
 }
 
 /**
@@ -73,23 +399,97 @@ function calculateIndicationAndError(appliedLoad, indicatedValue, verificationIn
 }
 
 /**
- * 1. Weighing Performance Test Calculation
- * Evaluates error curve across increasing and decreasing loads and checks hysteresis.
+ * Hysteresis validation per OIML R-76 clause 3.6.1 & A.4.4.3
+ * Formula: Hys(L) = |P_dec(L) - P_inc(L)| <= MPE(L)
  * 
- * @param {Object|Array} data - Array of points or { points: [...] }
- * @param {Object} instrument - Instrument specifications (verificationInterval, accuracyClass, etc.)
+ * @param {Array<Object>} increasingPoints - Array of { appliedLoad, indicatedValue, deltaL, continuousIndication }
+ * @param {Array<Object>} decreasingPoints - Array of { appliedLoad, indicatedValue, deltaL, continuousIndication }
+ * @param {Object} instrument - Instrument specifications
  * @param {boolean} [isInService=false]
+ * @param {Array<Object>} [ranges] - Multi-interval ranges
+ * @param {Object|number} [tare] - Tare configuration
+ * @returns {Object} { evaluations, maxHysteresis, maxMpeAllowed, overallPass }
  */
-function calculateWeighingPerformance(data, instrument, isInService = false) {
-  const points = Array.isArray(data) ? data : data?.points || [];
-  const e = Number(instrument?.verificationInterval) || 0.001;
+function validateHysteresis(increasingPoints = [], decreasingPoints = [], instrument = {}, isInService = false, ranges = null, tare = null) {
   const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const e = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
+  const activeRanges = ranges || instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e }];
+
+  let overallPass = true;
+  let maxHysteresis = 0;
+  let maxMpeAllowed = 0;
+
+  const evaluations = [];
+
+  // Match increasing and decreasing points by applied load
+  increasingPoints.forEach((incPt) => {
+    const load = Number(incPt.appliedLoad ?? incPt.load) || 0;
+    // Find matching decreasing point within small numerical epsilon
+    const decPt = decreasingPoints.find((dp) => Math.abs(Number(dp.appliedLoad ?? dp.load) - load) < 1e-6);
+
+    if (decPt) {
+      const pInc = incPt.continuousIndication != null ? Number(incPt.continuousIndication) : calculateIndicationAndError(load, incPt.indicatedValue ?? incPt.incReading, e, incPt.deltaL).continuousIndication;
+      const pDec = decPt.continuousIndication != null ? Number(decPt.continuousIndication) : calculateIndicationAndError(load, decPt.indicatedValue ?? decPt.decReading, e, decPt.deltaL).continuousIndication;
+
+      const hysteresis = Number(Math.abs(pDec - pInc).toFixed(8));
+
+      // Calculate MPE for this load
+      const mpeInfo = calculateMultiIntervalMPE(load, accuracyClass, activeRanges, isInService, tare);
+      const mpe = mpeInfo.mpe;
+
+      const passed = hysteresis <= mpe + 1e-9;
+      if (!passed) {
+        overallPass = false;
+      }
+
+      if (hysteresis > maxHysteresis) maxHysteresis = hysteresis;
+      if (mpe > maxMpeAllowed) maxMpeAllowed = mpe;
+
+      evaluations.push({
+        appliedLoad: load,
+        pInc,
+        pDec,
+        hysteresis,
+        mpe,
+        mpeInE: mpeInfo.mpeInE,
+        currentRangeIndex: mpeInfo.currentRangeIndex,
+        passed,
+      });
+    }
+  });
+
+  return {
+    evaluations,
+    maxHysteresis: Number(maxHysteresis.toFixed(8)),
+    maxMpeAllowed: Number(maxMpeAllowed.toFixed(8)),
+    overallPass,
+  };
+}
+
+/**
+ * 1. Weighing Performance Test Calculation
+ * Evaluates error curve across increasing and decreasing loads, verifies multi-interval MPEs,
+ * subtractive/additive tare adjustments, and validates hysteresis.
+ * 
+ * @param {Object|Array} data - Array of points or { points: [...], tare: { value, type } }
+ * @param {Object} instrument - Instrument specifications (verificationInterval, accuracyClass, ranges, etc.)
+ * @param {boolean} [isInService=false]
+ * @param {Object|number} [tare]
+ */
+function calculateWeighingPerformance(data, instrument, isInService = false, tare = null) {
+  const points = Array.isArray(data) ? data : data?.points || [];
+  const tareData = tare || data?.tare || instrument?.tare || null;
+  const defaultE = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
+  const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e: defaultE }];
 
   if (!points.length) {
     return {
       points: [],
       maxCorrectedError: 0,
       maxMpeAllowed: 0,
+      hysteresisAnalysis: { evaluations: [], maxHysteresis: 0, maxMpeAllowed: 0, overallPass: true },
+      tareAnalysis: calculateTareCapacities(instrument?.maxCapacity || 0, tareData),
       overallPass: false,
       summary: 'No test measurement points provided.',
     };
@@ -99,7 +499,7 @@ function calculateWeighingPerformance(data, instrument, isInService = false) {
   const zeroPoint = points.find(p => Number(p.appliedLoad) === 0 && (p.isIncreasing === true || p.isIncreasing === undefined));
   let zeroError = 0;
   if (zeroPoint) {
-    const { error } = calculateIndicationAndError(0, zeroPoint.indicatedValue, e, zeroPoint.deltaL);
+    const { error } = calculateIndicationAndError(0, zeroPoint.indicatedValue, defaultE, zeroPoint.deltaL);
     zeroError = error;
   }
 
@@ -113,15 +513,18 @@ function calculateWeighingPerformance(data, instrument, isInService = false) {
     const isIncreasing = p.isIncreasing !== false;
     const deltaL = p.deltaL;
 
-    const { continuousIndication, error } = calculateIndicationAndError(appliedLoad, indicatedValue, e, deltaL);
+    // Determine verification interval e for this load point
+    const mpeInfo = calculateMultiIntervalMPE(appliedLoad, accuracyClass, ranges, isInService, tareData);
+    const activeE = mpeInfo.currentE || defaultE;
+
+    const { continuousIndication, error } = calculateIndicationAndError(appliedLoad, indicatedValue, activeE, deltaL);
     
     // Corrected error Ec = E - E0 (OIML R-76 A.4.4.3)
     const correctedError = Number((error - zeroError).toFixed(8));
     
-    // Calculate MPE
-    const loadInE = appliedLoad / e;
-    const mpeE = getMPE(accuracyClass, loadInE, isInService);
-    const mpeMass = Number((mpeE * e).toFixed(8));
+    // MPE in mass units
+    const mpeMass = mpeInfo.mpe;
+    const mpeE = mpeInfo.mpeInE;
 
     // Tolerance check (with micro-epsilon for floating point)
     const passed = Math.abs(correctedError) <= mpeMass + 1e-9;
@@ -140,26 +543,41 @@ function calculateWeighingPerformance(data, instrument, isInService = false) {
       index: idx + 1,
       appliedLoad,
       indicatedValue,
-      deltaL: deltaL !== undefined ? Number(deltaL) : null,
+      deltaL: deltaL !== undefined && deltaL !== null ? Number(deltaL) : null,
       continuousIndication,
       error,
       correctedError,
       mpeInE: mpeE,
       mpeMass,
+      activeE,
+      currentRangeIndex: mpeInfo.currentRangeIndex,
       isIncreasing,
       passed,
     };
   });
+
+  // Hysteresis analysis
+  const incPoints = evaluatedPoints.filter(p => p.isIncreasing);
+  const decPoints = evaluatedPoints.filter(p => !p.isIncreasing);
+  const hysteresisAnalysis = validateHysteresis(incPoints, decPoints, instrument, isInService, ranges, tareData);
+
+  if (!hysteresisAnalysis.overallPass) {
+    overallPass = false;
+  }
+
+  const tareAnalysis = calculateTareCapacities(instrument?.maxCapacity || 0, tareData);
 
   return {
     points: evaluatedPoints,
     zeroError: Number(zeroError.toFixed(8)),
     maxCorrectedError: Number(maxCorrectedError.toFixed(8)),
     maxMpeAllowed: Number(maxMpeAllowed.toFixed(8)),
+    hysteresisAnalysis,
+    tareAnalysis,
     overallPass,
     summary: overallPass
-      ? 'All measurement points within OIML R-76 Maximum Permissible Error tolerances.'
-      : 'One or more measurement points exceeded Maximum Permissible Error tolerances.',
+      ? 'All measurement points and hysteresis within OIML R-76 Maximum Permissible Error tolerances.'
+      : 'One or more measurement points or hysteresis exceeded Maximum Permissible Error tolerances.',
   };
 }
 
@@ -167,6 +585,7 @@ function calculateWeighingPerformance(data, instrument, isInService = false) {
  * 2. Repeatability Test Calculation
  * Evaluates multiple consecutive weighings of identical load.
  * Difference between maximum and minimum indication must not exceed |MPE| for that load.
+ * Also computes statistical parameters (mean, standard deviation s, variance) for uncertainty budget.
  * 
  * @param {Object|Array} data - Array of series or { series: [{ load, readings: [...] }] }
  * @param {Object} instrument
@@ -182,13 +601,15 @@ function calculateRepeatability(data, instrument, isInService = false) {
     series = [{ load: Number(data.load || instrument?.maxCapacity || 0), readings: data.readings }];
   }
 
-  const e = Number(instrument?.verificationInterval) || 0.001;
+  const defaultE = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
   const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e: defaultE }];
 
   if (!series.length) {
     return {
       series: [],
       maxRange: 0,
+      maxStdDev: 0,
       overallPass: false,
       summary: 'No repeatability test series provided.',
     };
@@ -196,6 +617,7 @@ function calculateRepeatability(data, instrument, isInService = false) {
 
   let overallPass = true;
   let globalMaxRange = 0;
+  let globalMaxStdDev = 0;
 
   const evaluatedSeries = series.map((s, idx) => {
     const load = Number(s.load) || 0;
@@ -211,6 +633,9 @@ function calculateRepeatability(data, instrument, isInService = false) {
         readings: numericReadings,
         maxReading: numericReadings[0] || 0,
         minReading: numericReadings[0] || 0,
+        mean: numericReadings[0] || 0,
+        stdDev: 0,
+        variance: 0,
         range: 0,
         mpeMass: 0,
         passed: false,
@@ -218,13 +643,18 @@ function calculateRepeatability(data, instrument, isInService = false) {
       };
     }
 
+    const n = numericReadings.length;
+    const mean = numericReadings.reduce((sum, val) => sum + val, 0) / n;
+    const variance = numericReadings.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (n - 1);
+    const stdDev = Math.sqrt(variance);
+
     const maxVal = Math.max(...numericReadings);
     const minVal = Math.min(...numericReadings);
     const range = Number((maxVal - minVal).toFixed(8));
 
-    const loadInE = load / e;
-    const mpeE = getMPE(accuracyClass, loadInE, isInService);
-    const mpeMass = Number((mpeE * e).toFixed(8));
+    const mpeInfo = calculateMultiIntervalMPE(load, accuracyClass, ranges, isInService);
+    const mpeMass = mpeInfo.mpe;
+    const mpeE = mpeInfo.mpeInE;
 
     const passed = range <= mpeMass + 1e-9;
     if (!passed) {
@@ -233,16 +663,24 @@ function calculateRepeatability(data, instrument, isInService = false) {
     if (range > globalMaxRange) {
       globalMaxRange = range;
     }
+    if (stdDev > globalMaxStdDev) {
+      globalMaxStdDev = stdDev;
+    }
 
     return {
       seriesIndex: idx + 1,
       load,
       readings: numericReadings,
+      nReadings: n,
       maxReading: maxVal,
       minReading: minVal,
+      mean: Number(mean.toFixed(8)),
+      stdDev: Number(stdDev.toFixed(8)),
+      variance: Number(variance.toFixed(8)),
       range,
       mpeInE: mpeE,
       mpeMass,
+      activeE: mpeInfo.currentE,
       passed,
     };
   });
@@ -250,6 +688,7 @@ function calculateRepeatability(data, instrument, isInService = false) {
   return {
     series: evaluatedSeries,
     maxRange: Number(globalMaxRange.toFixed(8)),
+    maxStdDev: Number(globalMaxStdDev.toFixed(8)),
     overallPass,
     summary: overallPass
       ? `Repeatability satisfied. Maximum observed variation (${globalMaxRange} ${instrument?.unit || 'kg'}) <= MPE.`
@@ -268,8 +707,9 @@ function calculateRepeatability(data, instrument, isInService = false) {
  */
 function calculateEccentricity(data, instrument, isInService = false) {
   const positions = Array.isArray(data) ? data : data?.positions || [];
-  const e = Number(instrument?.verificationInterval) || 0.001;
+  const defaultE = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
   const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e: defaultE }];
 
   if (!positions.length) {
     return {
@@ -289,7 +729,7 @@ function calculateEccentricity(data, instrument, isInService = false) {
   const centerPos = positions.find(p => String(p.position).toUpperCase() === 'CENTER' || String(p.position).toUpperCase() === 'POS_CENTER');
   let centerIndication = null;
   if (centerPos) {
-    const { continuousIndication } = calculateIndicationAndError(centerPos.appliedLoad, centerPos.indicatedValue, e, centerPos.deltaL);
+    const { continuousIndication } = calculateIndicationAndError(centerPos.appliedLoad, centerPos.indicatedValue, defaultE, centerPos.deltaL);
     centerIndication = continuousIndication;
   }
 
@@ -301,12 +741,14 @@ function calculateEccentricity(data, instrument, isInService = false) {
     const indicatedValue = Number(p.indicatedValue) || 0;
     const deltaL = p.deltaL;
 
-    const { continuousIndication, error } = calculateIndicationAndError(appliedLoad, indicatedValue, e, deltaL);
+    const mpeInfo = calculateMultiIntervalMPE(appliedLoad, accuracyClass, ranges, isInService);
+    const activeE = mpeInfo.currentE || defaultE;
+
+    const { continuousIndication, error } = calculateIndicationAndError(appliedLoad, indicatedValue, activeE, deltaL);
     const absError = Math.abs(error);
 
-    const loadInE = appliedLoad / e;
-    const mpeE = getMPE(accuracyClass, loadInE, isInService);
-    const mpeMass = Number((mpeE * e).toFixed(8));
+    const mpeMass = mpeInfo.mpe;
+    const mpeE = mpeInfo.mpeInE;
     mpeForTest = mpeMass;
 
     const passed = absError <= mpeMass + 1e-9;
@@ -335,6 +777,7 @@ function calculateEccentricity(data, instrument, isInService = false) {
       diffFromCenter,
       mpeInE: mpeE,
       mpeMass,
+      activeE,
       passed,
     };
   });
@@ -361,9 +804,10 @@ function calculateEccentricity(data, instrument, isInService = false) {
  * @param {boolean} [isInService=false]
  */
 function calculateTemperatureEffect(data, instrument, isInService = false) {
-  const points = Array.isArray(data) ? data : data?.temperaturePoints || [];
-  const e = Number(instrument?.verificationInterval) || 0.001;
+  const points = Array.isArray(data) ? data : data?.temperaturePoints || data?.tests || [];
+  const defaultE = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
   const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e: defaultE }];
 
   if (!points.length) {
     return {
@@ -384,19 +828,20 @@ function calculateTemperatureEffect(data, instrument, isInService = false) {
 
   const evaluatedPoints = sortedPoints.map((p, idx) => {
     const temp = Number(p.temperature) || 0;
-    const zeroInd = Number(p.zeroIndication) || 0;
-    const spanLoad = Number(p.spanLoad) || 0;
-    const spanInd = Number(p.spanIndication) || 0;
+    const zeroInd = Number(p.zeroIndication ?? p.zeroReading ?? 0);
+    const spanLoad = Number(p.spanLoad || instrument?.maxCapacity || 0);
+    const spanInd = Number(p.spanIndication ?? p.spanReading ?? p.reading ?? spanLoad);
 
-    const zeroCalc = calculateIndicationAndError(0, zeroInd, e, p.zeroDeltaL);
-    const spanCalc = calculateIndicationAndError(spanLoad, spanInd, e, p.spanDeltaL);
+    const mpeInfo = calculateMultiIntervalMPE(spanLoad, accuracyClass, ranges, isInService);
+    const activeE = mpeInfo.currentE || defaultE;
+
+    const zeroCalc = calculateIndicationAndError(0, zeroInd, activeE, p.zeroDeltaL);
+    const spanCalc = calculateIndicationAndError(spanLoad, spanInd, activeE, p.spanDeltaL);
 
     const spanError = spanCalc.error;
     const correctedSpanError = Number((spanError - zeroCalc.error).toFixed(8));
 
-    const loadInE = spanLoad / e;
-    const mpeE = getMPE(accuracyClass, loadInE, isInService);
-    const mpeMass = Number((mpeE * e).toFixed(8));
+    const mpeMass = mpeInfo.mpe;
 
     const spanPassed = Math.abs(correctedSpanError) <= mpeMass + 1e-9;
     if (!spanPassed) {
@@ -416,6 +861,7 @@ function calculateTemperatureEffect(data, instrument, isInService = false) {
       spanError,
       correctedSpanError,
       mpeMass,
+      activeE,
       spanPassed,
     };
   });
@@ -431,7 +877,7 @@ function calculateTemperatureEffect(data, instrument, isInService = false) {
       const deltaE0 = Math.abs(p2.zeroError - p1.zeroError);
       // Normalized to 5 deg C: (deltaE0 / deltaT) * 5
       const driftPer5C = Number(((deltaE0 / deltaT) * 5).toFixed(8));
-      const allowedDrift = Number((1.0 * e).toFixed(8)); // 1e per 5 deg C
+      const allowedDrift = Number((1.0 * defaultE).toFixed(8)); // 1e per 5 deg C
 
       const driftPassed = driftPer5C <= allowedDrift + 1e-9;
       if (!driftPassed) {
@@ -460,7 +906,7 @@ function calculateTemperatureEffect(data, instrument, isInService = false) {
     maxSpanError: Number(maxSpanError.toFixed(8)),
     overallPass,
     summary: overallPass
-      ? `Temperature test compliant. Max zero drift (${maxDriftPer5C} / 5°C) <= 1e (${e}).`
+      ? `Temperature test compliant. Max zero drift (${maxDriftPer5C} / 5°C) <= 1e (${defaultE}).`
       : 'Temperature test failed. Zero drift or span error exceeded OIML R-76 limit.',
   };
 }
@@ -474,9 +920,10 @@ function calculateTemperatureEffect(data, instrument, isInService = false) {
  * @param {boolean} [isInService=false]
  */
 function calculateStability(data, instrument, isInService = false) {
-  const points = Array.isArray(data) ? data : data?.timePoints || [];
-  const e = Number(instrument?.verificationInterval) || 0.001;
+  const points = Array.isArray(data) ? data : data?.timePoints || data?.points || [];
+  const defaultE = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
   const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e: defaultE }];
 
   if (!points.length) {
     return {
@@ -490,21 +937,20 @@ function calculateStability(data, instrument, isInService = false) {
 
   let overallPass = true;
   const initialZero = Number(points[0]?.zeroReading) || 0;
-  const initialLoadReading = Number(points[0]?.loadReading) || 0;
+  const initialLoadReading = Number(points[0]?.loadReading ?? points[0]?.reading ?? 0);
   const appliedLoad = Number(points[0]?.appliedLoad || instrument?.maxCapacity || 0);
 
-  const loadInE = appliedLoad / e;
-  const mpeE = getMPE(accuracyClass, loadInE, isInService);
-  const mpeMass = Number((mpeE * e).toFixed(8));
-  const allowedZeroDrift = Number((1.0 * e).toFixed(8)); // 1.0e
+  const mpeInfo = calculateMultiIntervalMPE(appliedLoad, accuracyClass, ranges, isInService);
+  const mpeMass = mpeInfo.mpe;
+  const allowedZeroDrift = Number((1.0 * defaultE).toFixed(8)); // 1.0e
 
   let maxZeroDrift = 0;
   let maxSpanDrift = 0;
 
   const evaluatedPoints = points.map((p, idx) => {
-    const tMin = Number(p.timestampMinutes ?? idx * 15);
+    const tMin = Number(p.timestampMinutes ?? (p.timeHrs != null ? p.timeHrs * 60 : idx * 15));
     const zeroReading = Number(p.zeroReading) || 0;
-    const loadReading = Number(p.loadReading) || 0;
+    const loadReading = Number(p.loadReading ?? p.reading ?? appliedLoad);
 
     const zeroDrift = Number(Math.abs(zeroReading - initialZero).toFixed(8));
     const spanDrift = Number(Math.abs(loadReading - initialLoadReading).toFixed(8));
@@ -556,10 +1002,11 @@ function calculateStability(data, instrument, isInService = false) {
  * @param {boolean} [isInService=false]
  */
 function calculateTimeDependence(data, instrument, isInService = false) {
-  const creepReadings = data?.creepReadings || [];
+  const creepReadings = data?.creepReadings || data?.creep || [];
   const zeroReturn = data?.zeroReturn || { appliedLoad: 0, indicationAfterUnload: 0 };
-  const e = Number(instrument?.verificationInterval) || 0.001;
+  const defaultE = Number(instrument?.verificationInterval || instrument?.verificationScaleInterval_e) || 0.001;
   const accuracyClass = instrument?.accuracyClass || 'CLASS_III';
+  const ranges = instrument?.ranges || instrument?.multiIntervalRanges || [{ max: Infinity, e: defaultE }];
   const testLoad = Number(data?.testLoad || instrument?.maxCapacity || 0);
 
   if (!creepReadings.length) {
@@ -571,14 +1018,13 @@ function calculateTimeDependence(data, instrument, isInService = false) {
     };
   }
 
-  const loadInE = testLoad / e;
-  const mpeE = getMPE(accuracyClass, loadInE, isInService);
-  const mpeMass = Number((mpeE * e).toFixed(8));
+  const mpeInfo = calculateMultiIntervalMPE(testLoad, accuracyClass, ranges, isInService);
+  const mpeMass = mpeInfo.mpe;
 
   // Extract readings at key times
-  const read0 = Number(creepReadings.find(r => Number(r.minute) === 0)?.indication ?? creepReadings[0]?.indication ?? 0);
-  const read15 = Number(creepReadings.find(r => Number(r.minute) === 15)?.indication ?? creepReadings[Math.floor(creepReadings.length / 2)]?.indication ?? read0);
-  const read30 = Number(creepReadings.find(r => Number(r.minute) === 30)?.indication ?? creepReadings[creepReadings.length - 1]?.indication ?? read0);
+  const read0 = Number(creepReadings.find(r => Number(r.minute ?? r.min) === 0)?.indication ?? creepReadings[0]?.indication ?? creepReadings[0]?.reading ?? 0);
+  const read15 = Number(creepReadings.find(r => Number(r.minute ?? r.min) === 15)?.indication ?? creepReadings[Math.floor(creepReadings.length / 2)]?.indication ?? creepReadings[Math.floor(creepReadings.length / 2)]?.reading ?? read0);
+  const read30 = Number(creepReadings.find(r => Number(r.minute ?? r.min) === 30)?.indication ?? creepReadings[creepReadings.length - 1]?.indication ?? creepReadings[creepReadings.length - 1]?.reading ?? read0);
 
   const delta30to0 = Number(Math.abs(read30 - read0).toFixed(8));
   const delta30to15 = Number(Math.abs(read30 - read15).toFixed(8));
@@ -590,9 +1036,9 @@ function calculateTimeDependence(data, instrument, isInService = false) {
   const creep15Passed = delta30to15 <= allowedDelta15to30 + 1e-9;
 
   // Zero return analysis
-  const zeroIndicationAfter = Number(zeroReturn.indicationAfterUnload ?? 0);
+  const zeroIndicationAfter = Number(zeroReturn.indicationAfterUnload ?? zeroReturn.readingAfterUnload ?? 0);
   const zeroReturnError = Number(Math.abs(zeroIndicationAfter).toFixed(8));
-  const allowedZeroReturn = Number((0.5 * e).toFixed(8)); // 0.5e
+  const allowedZeroReturn = Number((0.5 * defaultE).toFixed(8)); // 0.5e
 
   const zeroReturnPassed = zeroReturnError <= allowedZeroReturn + 1e-9;
 
@@ -638,6 +1084,7 @@ function evaluateTestResult(testType, data, instrument, isInService = false) {
 
   switch (testType) {
     case 'WEIGHING_PERFORMANCE':
+    case 'WEIGHING':
       calculations = calculateWeighingPerformance(data, instrument, isInService);
       break;
     case 'REPEATABILITY':
@@ -647,6 +1094,7 @@ function evaluateTestResult(testType, data, instrument, isInService = false) {
       calculations = calculateEccentricity(data, instrument, isInService);
       break;
     case 'TEMPERATURE':
+    case 'TEMPERATURE_EFFECTS':
       calculations = calculateTemperatureEffect(data, instrument, isInService);
       break;
     case 'STABILITY':
@@ -672,7 +1120,14 @@ function evaluateTestResult(testType, data, instrument, isInService = false) {
 
 module.exports = {
   MPE_TABLE,
+  MIN_CAPACITY_IN_E,
+  normalizeRanges,
   getMPE,
+  calculateTareCapacities,
+  calculateMultiIntervalMPE,
+  getTareAdjustedMPE,
+  generateBoundaryLoadPoints,
+  validateHysteresis,
   calculateIndicationAndError,
   calculateWeighingPerformance,
   calculateRepeatability,

@@ -8,9 +8,15 @@
   "scripts": {
     "setup": "npm install && cd server && npx prisma migrate dev --name init && npx prisma db seed && cd ..",
     "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
-    "start": "concurrently \"npm start --workspace=server\" \"npm start --workspace=client\""
+    "start": "concurrently \"npm start --workspace=server\" \"npm start --workspace=client\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "@vitest/coverage-v8": "^4.1.11",
+    "concurrently": "^8.2.0",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.11"
   }
 }

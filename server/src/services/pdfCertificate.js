@@ -4,10 +4,12 @@
  *
  * Generates an official Indian Legal Metrology Test Certificate (Single-Page A4)
  * conforming to Ministry of Consumer Affairs, Food & Public Distribution standards.
+ * Features Multi-Interval / Multi-Range specs and ISO GUM Expanded Uncertainty Budget.
  */
 
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
+const { computeExpandedUncertainty } = require('./uncertaintyCalculator');
 
 // Official Color Palette
 const COLORS = {
@@ -121,6 +123,20 @@ async function generateCertificate(sessionData) {
         resultMap[r.testType] = r;
       });
 
+      // Compute measurement uncertainty budget
+      const repResult = resultMap['REPEATABILITY'];
+      const repStdDev = repResult?.calculations?.maxStdDev || 0;
+      const eccResult = resultMap['ECCENTRICITY'];
+      const eccError = eccResult?.calculations?.maxDifferenceFromCenter || 0;
+      const scaleD = Number(instrument.actualInterval || instrument.verificationInterval || 0.001);
+      const maxCap = Number(instrument.maxCapacity || 100);
+      const accClass = instrument.accuracyClass || 'CLASS_III';
+
+      const uncertaintyBudget = computeExpandedUncertainty(repStdDev, scaleD, maxCap, accClass, {
+        eccError,
+        ranges: instrument.ranges || instrument.multiIntervalRanges,
+      });
+
       // Prepare QR Payload
       const qrData = {
         certificateNo: session.certificateNo || 'NAWI-2026-000000',
@@ -130,6 +146,7 @@ async function generateCertificate(sessionData) {
         date: formatDate(session.completedAt || session.startedAt || new Date()),
         inspector: inspector.name || 'Testing Officer',
         standard: 'OIML R-76-1:2006',
+        uncertainty: `U = +/-${uncertaintyBudget.expandedUncertainty} ${instrument.unit || 'kg'} (k=2)`,
       };
 
       const qrBuffer = await generateQRCodeBuffer(qrData);
@@ -158,15 +175,15 @@ async function generateCertificate(sessionData) {
       const contentWidth = pageWidth - leftMargin - rightMargin; // 525.28
 
       // 1. TOP TRICOLOR STRIPE BAR
-      drawTricolorBar(doc, leftMargin, 20, contentWidth, 2.5);
+      drawTricolorBar(doc, leftMargin, 18, contentWidth, 2.5);
 
       // 2. DOCUMENT HEADER
-      let currentY = 32;
+      let currentY = 28;
 
       // Government of India
       doc
         .font('Helvetica-Bold')
-        .fontSize(12)
+        .fontSize(11.5)
         .fillColor(COLORS.NAVY)
         .text('GOVERNMENT OF INDIA', leftMargin, currentY, {
           width: contentWidth,
@@ -174,20 +191,20 @@ async function generateCertificate(sessionData) {
           characterSpacing: 0.8,
         });
 
-      currentY += 15;
+      currentY += 14;
       doc
         .font('Helvetica')
-        .fontSize(9.5)
+        .fontSize(9)
         .fillColor(COLORS.TEXT_DARK)
         .text('MINISTRY OF CONSUMER AFFAIRS, FOOD & PUBLIC DISTRIBUTION', leftMargin, currentY, {
           width: contentWidth,
           align: 'center',
         });
 
-      currentY += 12;
+      currentY += 11;
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.TEXT_MUTED)
         .text('DEPARTMENT OF LEGAL METROLOGY • CENTRAL VERIFICATION LABORATORY', leftMargin, currentY, {
           width: contentWidth,
@@ -195,10 +212,10 @@ async function generateCertificate(sessionData) {
         });
 
       // Title & Subtitle
-      currentY += 14;
+      currentY += 13;
       doc
         .font('Helvetica-Bold')
-        .fontSize(16)
+        .fontSize(15)
         .fillColor(COLORS.NAVY)
         .text('TEST CERTIFICATE', leftMargin, currentY, {
           width: contentWidth,
@@ -206,22 +223,22 @@ async function generateCertificate(sessionData) {
           characterSpacing: 1.2,
         });
 
-      currentY += 18;
+      currentY += 16;
       doc
         .font('Helvetica')
-        .fontSize(9)
+        .fontSize(8.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text('Non-Automatic Weighing Instrument — OIML R-76 Compliance', leftMargin, currentY, {
+        .text('Non-Automatic Weighing Instrument — OIML R-76 & ISO/IEC 17025 Compliance', leftMargin, currentY, {
           width: contentWidth,
           align: 'center',
         });
 
       // Certificate Number Banner
-      currentY += 14;
+      currentY += 12;
       const certNoText = `Certificate No: ${session.certificateNo || 'NAWI-2026-XXXXXX'}`;
       doc
         .font('Helvetica-Bold')
-        .fontSize(10)
+        .fontSize(9.5)
         .fillColor(COLORS.NAVY)
         .text(certNoText, leftMargin, currentY, {
           width: contentWidth,
@@ -229,7 +246,7 @@ async function generateCertificate(sessionData) {
         });
 
       // Horizontal Divider
-      currentY += 15;
+      currentY += 13;
       doc
         .strokeColor(COLORS.NAVY)
         .lineWidth(1)
@@ -237,33 +254,45 @@ async function generateCertificate(sessionData) {
         .lineTo(leftMargin + contentWidth, currentY)
         .stroke();
 
-      currentY += 8;
+      currentY += 7;
 
       // 3. INSTRUMENT DETAILS TABLE (Bordered)
       const tableX = leftMargin;
       const tableWidth = contentWidth;
 
       // Table Header Banner
-      const instHeaderHeight = 16;
+      const instHeaderHeight = 15;
       doc.rect(tableX, currentY, tableWidth, instHeaderHeight).fill(COLORS.BG_HEADER);
       doc
         .font('Helvetica-Bold')
-        .fontSize(8.5)
+        .fontSize(8)
         .fillColor(COLORS.WHITE)
-        .text('INSTRUMENT IDENTIFICATION & SPECIFICATIONS', tableX + 8, currentY + 4, {
+        .text('INSTRUMENT IDENTIFICATION & METROLOGICAL SPECIFICATIONS', tableX + 8, currentY + 3.5, {
           width: tableWidth - 16,
           align: 'left',
         });
 
       currentY += instHeaderHeight;
 
-      // Instrument Details Grid
+      // Check multi-interval ranges
+      const ranges = instrument.ranges || instrument.multiIntervalRanges || [];
+      const hasMultiInterval = Array.isArray(ranges) && ranges.length > 1;
+
       const accuracyClassFormatted = (instrument.accuracyClass || 'CLASS_III').replace('_', ' ');
       const unit = instrument.unit || 'kg';
-      const maxCap = instrument.maxCapacity != null ? `${instrument.maxCapacity} ${unit}` : 'N/A';
+
+      let maxCapDisplay = `${instrument.maxCapacity != null ? instrument.maxCapacity : 'N/A'} ${unit}`;
+      let eValDisplay = `${instrument.verificationInterval != null ? instrument.verificationInterval : 'N/A'} ${unit}`;
+      let dValDisplay = `${instrument.actualInterval != null ? instrument.actualInterval : 'N/A'} ${unit}`;
+
+      if (hasMultiInterval) {
+        const sortedRanges = [...ranges].sort((a, b) => (a.max || a.maxCapacity) - (b.max || b.maxCapacity));
+        maxCapDisplay = `${sortedRanges.map(r => r.max || r.maxCapacity).join(' / ')} ${unit} (Multi-Interval)`;
+        eValDisplay = `${sortedRanges.map(r => r.e || r.verificationInterval).join(' / ')} ${unit}`;
+        dValDisplay = `${sortedRanges.map(r => r.d || r.actualInterval || r.e).join(' / ')} ${unit}`;
+      }
+
       const minCap = instrument.minCapacity != null ? `${instrument.minCapacity} ${unit}` : 'N/A';
-      const eVal = instrument.verificationInterval != null ? `${instrument.verificationInterval} ${unit}` : 'N/A';
-      const dVal = instrument.actualInterval != null ? `${instrument.actualInterval} ${unit}` : 'N/A';
 
       const instRows = [
         [
@@ -272,27 +301,27 @@ async function generateCertificate(sessionData) {
         ],
         [
           { label: 'Manufacturer', value: instrument.manufacturer || 'N/A' },
-          { label: 'Model', value: instrument.model || 'N/A' },
+          { label: 'Model / Type', value: instrument.model || 'N/A' },
         ],
         [
           { label: 'Serial Number', value: instrument.serialNumber || 'N/A', isBold: true },
           { label: 'Accuracy Class', value: accuracyClassFormatted, isBold: true },
         ],
         [
-          { label: 'Max Capacity (Max)', value: maxCap },
+          { label: 'Max Capacity (Max)', value: maxCapDisplay },
           { label: 'Min Capacity (Min)', value: minCap },
         ],
         [
-          { label: 'Verification Interval (e)', value: eVal },
-          { label: 'Actual Scale Interval (d)', value: dVal },
+          { label: 'Verification Interval (e)', value: eValDisplay },
+          { label: 'Actual Interval (d)', value: dValDisplay },
         ],
         [
           { label: 'Testing Location', value: instrument.location || 'Central Verification Centre' },
-          { label: 'Test Standard', value: 'OIML R-76-1 (Edition 2006)' },
+          { label: 'Metrological Standard', value: 'OIML R-76-1:2006 / ISO GUM' },
         ],
       ];
 
-      const rowHeight = 14;
+      const rowHeight = 13.5;
       const halfWidth = tableWidth / 2;
 
       instRows.forEach((row, rIdx) => {
@@ -309,16 +338,16 @@ async function generateCertificate(sessionData) {
           // Label
           doc
             .font('Helvetica-Bold')
-            .fontSize(7.5)
+            .fontSize(7)
             .fillColor(COLORS.NAVY)
-            .text(`${cell.label}:`, cellX + 6, rowY + 3.5, { width: labelWidth });
+            .text(`${cell.label}:`, cellX + 6, rowY + 3, { width: labelWidth });
 
           // Value
           doc
             .font(cell.isBold ? 'Helvetica-Bold' : 'Helvetica')
-            .fontSize(7.5)
+            .fontSize(7)
             .fillColor(COLORS.TEXT_DARK)
-            .text(String(cell.value), cellX + 6 + labelWidth, rowY + 3.5, {
+            .text(String(cell.value), cellX + 6 + labelWidth, rowY + 3, {
               width: valueWidth,
               ellipsis: true,
             });
@@ -335,16 +364,16 @@ async function generateCertificate(sessionData) {
         .lineWidth(0.8)
         .stroke(COLORS.BORDER_COLOR);
 
-      currentY += instTableTotalHeight + 10;
+      currentY += instTableTotalHeight + 8;
 
       // 4. TEST SUMMARY TABLE (6 Rows)
-      const testHeaderHeight = 16;
+      const testHeaderHeight = 15;
       doc.rect(tableX, currentY, tableWidth, testHeaderHeight).fill(COLORS.BG_HEADER);
       doc
         .font('Helvetica-Bold')
-        .fontSize(8.5)
+        .fontSize(8)
         .fillColor(COLORS.WHITE)
-        .text('METROLOGICAL VERIFICATION TEST RESULTS (OIML R-76)', tableX + 8, currentY + 4, {
+        .text('METROLOGICAL VERIFICATION TEST RESULTS (OIML R-76)', tableX + 8, currentY + 3.5, {
           width: tableWidth - 16,
           align: 'left',
         });
@@ -361,7 +390,7 @@ async function generateCertificate(sessionData) {
       ];
 
       // Subheader row
-      const subHeaderHeight = 13;
+      const subHeaderHeight = 12;
       doc.rect(tableX, currentY, tableWidth, subHeaderHeight).fill('#E2E8F0');
       const subCols = ['Test Type', 'Standard Reference', 'Status', 'Remarks / Evaluation'];
       subCols.forEach((colName, cIdx) => {
@@ -369,15 +398,15 @@ async function generateCertificate(sessionData) {
         const pX = colPositions[cIdx] + 5;
         doc
           .font('Helvetica-Bold')
-          .fontSize(7.5)
+          .fontSize(7)
           .fillColor(COLORS.NAVY)
-          .text(colName, pX, currentY + 3, { width: colWidths[cIdx] - 10, align });
+          .text(colName, pX, currentY + 2.5, { width: colWidths[cIdx] - 10, align });
       });
       doc.rect(tableX, currentY, tableWidth, subHeaderHeight).lineWidth(0.5).stroke(COLORS.BORDER_COLOR);
       currentY += subHeaderHeight;
 
       // 6 Test Rows
-      const testRowHeight = 15;
+      const testRowHeight = 14;
       TEST_ORDER.forEach((testType, tIdx) => {
         const rowY = currentY + tIdx * testRowHeight;
         const testRes = resultMap[testType];
@@ -407,9 +436,9 @@ async function generateCertificate(sessionData) {
         // Test name
         doc
           .font('Helvetica-Bold')
-          .fontSize(7.5)
+          .fontSize(7)
           .fillColor(COLORS.TEXT_DARK)
-          .text(`${tIdx + 1}. ${TEST_DISPLAY_NAMES[testType]}`, colPositions[0] + 5, rowY + 4, {
+          .text(`${tIdx + 1}. ${TEST_DISPLAY_NAMES[testType]}`, colPositions[0] + 5, rowY + 3.5, {
             width: colWidths[0] - 10,
             ellipsis: true,
           });
@@ -417,18 +446,18 @@ async function generateCertificate(sessionData) {
         // Reference
         doc
           .font('Helvetica')
-          .fontSize(7)
+          .fontSize(6.5)
           .fillColor(COLORS.TEXT_MUTED)
-          .text(TEST_REFERENCES[testType], colPositions[1] + 5, rowY + 4, {
+          .text(TEST_REFERENCES[testType], colPositions[1] + 5, rowY + 3.5, {
             width: colWidths[1] - 10,
           });
 
         // Status Badge
         doc
           .font('Helvetica-Bold')
-          .fontSize(8)
+          .fontSize(7.5)
           .fillColor(statusColor)
-          .text(statusText, colPositions[2], rowY + 3.5, {
+          .text(statusText, colPositions[2], rowY + 3, {
             width: colWidths[2],
             align: 'center',
           });
@@ -436,9 +465,9 @@ async function generateCertificate(sessionData) {
         // Remarks
         doc
           .font('Helvetica')
-          .fontSize(7)
+          .fontSize(6.5)
           .fillColor(COLORS.TEXT_DARK)
-          .text(remarksText, colPositions[3] + 5, rowY + 4, {
+          .text(remarksText, colPositions[3] + 5, rowY + 3.5, {
             width: colWidths[3] - 10,
             ellipsis: true,
           });
@@ -453,24 +482,24 @@ async function generateCertificate(sessionData) {
         .lineWidth(0.8)
         .stroke(COLORS.BORDER_COLOR);
 
-      currentY += testTableTotalHeight + 10;
+      currentY += testTableTotalHeight + 8;
 
-      // 5. TEST CONDITIONS & OVERALL RESULT BOXES
+      // 5. TEST CONDITIONS, UNCERTAINTY & OVERALL RESULT BOXES
       const boxY = currentY;
-      const boxHeight = 62;
-      const leftBoxWidth = 270;
+      const boxHeight = 66;
+      const leftBoxWidth = 330;
       const rightBoxWidth = tableWidth - leftBoxWidth - 10;
       const rightBoxX = tableX + leftBoxWidth + 10;
 
-      // Left Box: Test Conditions
+      // Left Box: Test Conditions & Measurement Uncertainty
       doc.rect(tableX, boxY, leftBoxWidth, boxHeight).fill(COLORS.BG_LIGHT);
       doc.rect(tableX, boxY, leftBoxWidth, boxHeight).lineWidth(0.8).stroke(COLORS.BORDER_COLOR);
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.NAVY)
-        .text('ENVIRONMENTAL & TEST CONDITIONS', tableX + 8, boxY + 6);
+        .text('ENVIRONMENTAL CONDITIONS & MEASUREMENT UNCERTAINTY (ISO GUM / cg-18)', tableX + 6, boxY + 5);
 
       const tempStr = session.temperature != null ? `${session.temperature} °C` : '23.0 °C (Nominal)';
       const humStr = session.humidity != null ? `${session.humidity} % RH` : '55.0 % RH';
@@ -480,11 +509,13 @@ async function generateCertificate(sessionData) {
 
       doc
         .font('Helvetica')
-        .fontSize(7.5)
+        .fontSize(7)
         .fillColor(COLORS.TEXT_DARK)
-        .text(`• Ambient Temperature : ${tempStr}`, tableX + 8, boxY + 20)
-        .text(`• Relative Humidity    : ${humStr}`, tableX + 8, boxY + 32)
-        .text(`• Verification Period : ${dateRangeStr}`, tableX + 8, boxY + 44);
+        .text(`• Ambient Conditions : ${tempStr} | ${humStr}`, tableX + 6, boxY + 18)
+        .text(`• Verification Period: ${dateRangeStr}`, tableX + 6, boxY + 29)
+        .text(`• Standard Uncertainty (uc): ${uncertaintyBudget.standardUncertainty} ${unit}`, tableX + 6, boxY + 40)
+        .font('Helvetica-Bold')
+        .text(`• Expanded Uncertainty (U) : ±${uncertaintyBudget.expandedUncertainty} ${unit} (k=2, 95% conf.)`, tableX + 6, boxY + 51);
 
       // Right Box: Overall Verdict
       const isOverallPass = session.overallResult === 'PASS';
@@ -497,18 +528,18 @@ async function generateCertificate(sessionData) {
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text('OVERALL VERDICT', rightBoxX, boxY + 8, {
+        .text('OVERALL VERDICT', rightBoxX, boxY + 6, {
           width: rightBoxWidth,
           align: 'center',
         });
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(20)
+        .fontSize(18)
         .fillColor(verdictColor)
-        .text(isOverallPass ? 'PASS' : 'FAIL', rightBoxX, boxY + 20, {
+        .text(isOverallPass ? 'PASS' : 'FAIL', rightBoxX, boxY + 18, {
           width: rightBoxWidth,
           align: 'center',
           characterSpacing: 2,
@@ -516,14 +547,14 @@ async function generateCertificate(sessionData) {
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(7)
+        .fontSize(6.5)
         .fillColor(verdictColor)
         .text(isOverallPass ? 'VERIFIED & CONFORMANT' : 'REJECTED - NON-CONFORMANT', rightBoxX, boxY + 46, {
           width: rightBoxWidth,
           align: 'center',
         });
 
-      currentY += boxHeight + 12;
+      currentY += boxHeight + 10;
 
       // 6. SIGNATURE BLOCK & QR CODE
       const sigSectionY = currentY;
@@ -534,96 +565,96 @@ async function generateCertificate(sessionData) {
       const officerX = tableX;
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.NAVY)
         .text('TESTING OFFICER (INSPECTOR)', officerX, sigSectionY);
 
       doc
         .strokeColor(COLORS.NAVY)
         .lineWidth(0.8)
-        .moveTo(officerX, sigSectionY + 36)
-        .lineTo(officerX + sigWidth, sigSectionY + 36)
+        .moveTo(officerX, sigSectionY + 34)
+        .lineTo(officerX + sigWidth, sigSectionY + 34)
         .stroke();
 
       const inspName = inspector.name || 'Dr. Rajesh Kumar';
       const inspDesig = 'Inspector of Legal Metrology';
       doc
         .font('Helvetica-Bold')
-        .fontSize(7.5)
-        .fillColor(COLORS.TEXT_DARK)
-        .text(`Name: ${inspName}`, officerX, sigSectionY + 41)
-        .font('Helvetica')
         .fontSize(7)
+        .fillColor(COLORS.TEXT_DARK)
+        .text(`Name: ${inspName}`, officerX, sigSectionY + 38)
+        .font('Helvetica')
+        .fontSize(6.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text(`Designation: ${inspDesig}`, officerX, sigSectionY + 51)
-        .text(`Date: ${formatDate(session.completedAt || new Date())}`, officerX, sigSectionY + 61);
+        .text(`Designation: ${inspDesig}`, officerX, sigSectionY + 48)
+        .text(`Date: ${formatDate(session.completedAt || new Date())}`, officerX, sigSectionY + 58);
 
       // Middle Signature: Approving Authority
       const authX = officerX + sigWidth + 25;
       doc
         .font('Helvetica-Bold')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(COLORS.NAVY)
         .text('APPROVING AUTHORITY', authX, sigSectionY);
 
       doc
         .strokeColor(COLORS.NAVY)
         .lineWidth(0.8)
-        .moveTo(authX, sigSectionY + 36)
-        .lineTo(authX + sigWidth, sigSectionY + 36)
+        .moveTo(authX, sigSectionY + 34)
+        .lineTo(authX + sigWidth, sigSectionY + 34)
         .stroke();
 
       doc
         .font('Helvetica-Bold')
-        .fontSize(7.5)
-        .fillColor(COLORS.TEXT_DARK)
-        .text('Name: Controller / Joint Controller', authX, sigSectionY + 41)
-        .font('Helvetica')
         .fontSize(7)
+        .fillColor(COLORS.TEXT_DARK)
+        .text('Name: Controller / Joint Controller', authX, sigSectionY + 38)
+        .font('Helvetica')
+        .fontSize(6.5)
         .fillColor(COLORS.TEXT_MUTED)
-        .text('Department of Legal Metrology', authX, sigSectionY + 51)
-        .text(`Date: ${formatDate(session.completedAt || new Date())}`, authX, sigSectionY + 61);
+        .text('Department of Legal Metrology', authX, sigSectionY + 48)
+        .text(`Date: ${formatDate(session.completedAt || new Date())}`, authX, sigSectionY + 58);
 
       // Right: QR Code
       const qrX = tableX + tableWidth - qrWidth;
       if (qrBuffer) {
-        doc.image(qrBuffer, qrX + 10, sigSectionY - 4, {
-          width: 65,
-          height: 65,
+        doc.image(qrBuffer, qrX + 10, sigSectionY - 6, {
+          width: 62,
+          height: 62,
         });
         doc
           .font('Helvetica')
           .fontSize(6)
           .fillColor(COLORS.TEXT_MUTED)
-          .text('Scan for Verification', qrX, sigSectionY + 62, {
+          .text('Scan for Verification', qrX, sigSectionY + 58, {
             width: qrWidth,
             align: 'center',
           });
       }
 
       // 7. FOOTER & BOTTOM TRICOLOR BAR
-      const footerY = pageHeight - 45;
+      const footerY = pageHeight - 40;
 
       doc
         .strokeColor(COLORS.BORDER_LIGHT)
         .lineWidth(0.5)
-        .moveTo(leftMargin, footerY - 5)
-        .lineTo(leftMargin + contentWidth, footerY - 5)
+        .moveTo(leftMargin, footerY - 4)
+        .lineTo(leftMargin + contentWidth, footerY - 4)
         .stroke();
 
-      const validityPeriod = isOverallPass ? '12 months from the verification date' : 'Not Applicable (Failed Verification)';
+      const validityPeriod = isOverallPass ? '12 months from verification date' : 'Not Applicable (Failed Verification)';
       doc
         .font('Helvetica-Oblique')
-        .fontSize(6.5)
+        .fontSize(6)
         .fillColor(COLORS.TEXT_MUTED)
         .text(
-          `This certificate is valid for ${validityPeriod}. Document generated by NAWI-ReportPro Metrological Verification System.`,
+          `This certificate is valid for ${validityPeriod}. Conforms to OIML R-76-1:2006 & Legal Metrology Act, 2009. Generated by NAWI-ReportPro.`,
           leftMargin,
           footerY,
           { width: contentWidth, align: 'center' }
         );
 
-      drawTricolorBar(doc, leftMargin, pageHeight - 25, contentWidth, 2.5);
+      drawTricolorBar(doc, leftMargin, pageHeight - 22, contentWidth, 2.5);
 
       // Finalize PDF Document
       doc.end();

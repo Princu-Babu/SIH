@@ -36,10 +36,10 @@ NAWI-ReportPro is an enterprise-grade digital verification and test report gener
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
 | E2E | E2E Testing Track | Test harness, test runners (Vitest), Tiers 1-4 tests, TEST_INFRA.md, TEST_READY.md | none | IN_PROGRESS |
-| M1 | Metrological & OIML R-76 Hardening | Multi-interval ($e_1, e_2, e_3$), tare subtractive/additive, expanded uncertainty budget ($U=2\cdot u_c$), boundary step points, hysteresis | none | PLANNED |
-| M2 | Live RS-232 Serial Telemetry & CSV Import | SICS, Avery, Essae protocol simulators, zero-tracking, stability lock, single-click capture toolbar, batch CSV import/export | none | PLANNED |
-| M3 | Error Envelope Curves & Public Portal | SVG/Canvas Error Envelope Chart, public `/verify/:certificateNo` route, HMAC digital seal, scannable QR verification | M1 | PLANNED |
-| M4 | Offline PWA & Resilient Sync Queue | Service Worker, manifest, IndexedDB offline queue, reconnect auto-sync hook, `POST /api/sync/batch` idempotent backend | none | PLANNED |
+| M1 | Metrological & OIML R-76 Hardening | Multi-interval ($e_1, e_2, e_3$), tare subtractive/additive, expanded uncertainty budget ($U=2\cdot u_c$), boundary step points, hysteresis | none | DONE |
+| M2 | Live RS-232 Serial Telemetry & CSV Import | SICS, Avery, Essae protocol simulators, zero-tracking, stability lock, single-click capture toolbar, batch CSV import/export | none | DONE |
+| M3 | Error Envelope Curves & Public Portal | SVG/Canvas Error Envelope Chart, public `/verify/:certificateNo` route, HMAC digital seal, scannable QR verification | M1 | IN_PROGRESS |
+| M4 | Offline PWA & Resilient Sync Queue | Service Worker, manifest, IndexedDB offline queue, reconnect auto-sync hook, `POST /api/sync/batch` idempotent backend | none | DONE |
 | M5 | Final E2E Test Suite & Adversarial Hardening | Pass 100% E2E tests (Tiers 1-4), Tier 5 white-box adversarial stress testing, zero build/lint errors | E2E, M1, M2, M3, M4 | PLANNED |
 
 ---

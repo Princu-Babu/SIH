@@ -46,14 +46,19 @@ Conduct a comprehensive competitive gap analysis, architectural stress audit, an
 ## Team Roster
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| explorer_1 | teamwork_preview_explorer | Survey Client & UI Architecture (R2 UI, R3 curves/portal, R4 PWA) | in-progress | 0d57cd2e-2a30-4d98-aa77-b90dac1fbfae |
-| explorer_2 | teamwork_preview_explorer | Survey Server & DB Architecture (R2 telemetry, R3 API, R4 sync) | in-progress | 16a9e321-5067-41b1-a1f8-415c6a157826 |
-| explorer_3 | teamwork_preview_explorer | Survey Metrology Engine & Test Infra (R1 OIML R-76, uncertainty) | in-progress | 2c51abea-f56e-4ec9-bbb9-f337354a6418 |
+| explorer_1 | teamwork_preview_explorer | Survey Client & UI Architecture | completed | 0d57cd2e-2a30-4d98-aa77-b90dac1fbfae |
+| explorer_2 | teamwork_preview_explorer | Survey Server & DB Architecture | completed | 16a9e321-5067-41b1-a1f8-415c6a157826 |
+| explorer_3 | teamwork_preview_explorer | Survey Metrology Engine & Test Infra | completed | 2c51abea-f56e-4ec9-bbb9-f337354a6418 |
+| worker_e2e | teamwork_preview_worker | E2E Test Suite (Tiers 1-4, Vitest, TEST_INFRA.md, TEST_READY.md) | in-progress | 7c47bfb1-f264-4d0e-bdad-bf0e28d6cd75 |
+| worker_m1 | teamwork_preview_worker | M1: Metrology Hardening (multi-interval, tare, uncertainty, step points) | completed | 1abc9e44-46f2-4030-a8dc-ef90ac4090d4 |
+| worker_m2 | teamwork_preview_worker | M2: RS-232 Telemetry Simulator (SICS/Avery/Essae) & Batch CSV | completed | 3a49f785-a305-4c8a-8588-086aaf69a007 |
+| worker_m4 | teamwork_preview_worker | M4: Offline PWA & Resilient Sync Queue | completed | 7c7ff9fc-c7c5-4f7a-a427-1d7ce7c44427 |
+| worker_m3 | teamwork_preview_worker | M3: Error Envelope Chart & Public Verification Portal | in-progress | 55cf654a-52f8-4d24-a138-3a1849deae11 |
 
 ## Succession Status
 - Succession required: no
-- Spawn count: 3 / 16
-- Pending subagents: 0d57cd2e-2a30-4d98-aa77-b90dac1fbfae, 16a9e321-5067-41b1-a1f8-415c6a157826, 2c51abea-f56e-4ec9-bbb9-f337354a6418
+- Spawn count: 8 / 16
+- Pending subagents: 7c47bfb1-f264-4d0e-bdad-bf0e28d6cd75, 55cf654a-52f8-4d24-a138-3a1849deae11
 - Predecessor: none
 - Successor: not yet spawned
 

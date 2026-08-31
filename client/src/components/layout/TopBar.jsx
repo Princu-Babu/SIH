@@ -1,16 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiBell, FiChevronDown, FiUser, FiLogOut, FiMenu, FiGlobe } from 'react-icons/fi';
+import {
+  FiBell,
+  FiChevronDown,
+  FiUser,
+  FiLogOut,
+  FiMenu,
+  FiGlobe,
+  FiWifi,
+  FiWifiOff,
+  FiRefreshCw,
+  FiCheckCircle,
+  FiAlertTriangle,
+  FiDatabase,
+} from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
+import { useOfflineSync } from '../../hooks/useOfflineSync';
 
 export default function TopBar({ onToggleSidebar }) {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
+  const { isOnline, pendingCount, isSyncing, lastSyncTime, triggerSync } = useOfflineSync();
+
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const [syncDropdownOpen, setSyncDropdownOpen] = useState(false);
 
   const userDropdownRef = useRef(null);
   const langDropdownRef = useRef(null);
+  const syncDropdownRef = useRef(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -20,6 +38,9 @@ export default function TopBar({ onToggleSidebar }) {
       }
       if (langDropdownRef.current && !langDropdownRef.current.contains(event.target)) {
         setLangDropdownOpen(false);
+      }
+      if (syncDropdownRef.current && !syncDropdownRef.current.contains(event.target)) {
+        setSyncDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -38,6 +59,16 @@ export default function TopBar({ onToggleSidebar }) {
   const handleLanguageChange = (code) => {
     i18n.changeLanguage(code);
     setLangDropdownOpen(false);
+  };
+
+  const formatLastSync = (isoString) => {
+    if (!isoString) return 'Not yet synced';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return 'Recently';
+    }
   };
 
   return (
@@ -99,8 +130,115 @@ export default function TopBar({ onToggleSidebar }) {
           </div>
         </div>
 
-        {/* Right Side: Language Switcher + Notifications + User Menu */}
-        <div className="flex items-center gap-3">
+        {/* Right Side: Connectivity Badge + Language Switcher + Notifications + User Menu */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Live Connectivity & Sync Queue Badge */}
+          <div className="relative" ref={syncDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setSyncDropdownOpen(!syncDropdownOpen)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all duration-200 ${
+                isSyncing
+                  ? 'bg-blue-50 text-blue-700 border-blue-300 animate-pulse'
+                  : !isOnline
+                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                  : pendingCount > 0
+                  ? 'bg-amber-50 text-amber-700 border-amber-300'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+              }`}
+              title="Click to view offline queue status & trigger sync"
+            >
+              {isSyncing ? (
+                <>
+                  <FiRefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                  <span className="hidden xs:inline">Syncing ({pendingCount})</span>
+                  <span className="xs:hidden">Sync</span>
+                </>
+              ) : !isOnline ? (
+                <>
+                  <FiWifiOff className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="hidden sm:inline">Offline Mode</span>
+                  {pendingCount > 0 && (
+                    <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold">
+                      {pendingCount}
+                    </span>
+                  )}
+                </>
+              ) : pendingCount > 0 ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                  <span className="hidden sm:inline">Sync Queue</span>
+                  <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold">
+                    {pendingCount}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="hidden sm:inline">Online</span>
+                </>
+              )}
+              <FiChevronDown className="w-3 h-3 opacity-70" />
+            </button>
+
+            {/* Sync Queue Popover */}
+            {syncDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-lg shadow-xl py-3 px-4 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <FiDatabase className="w-4 h-4 text-[#1e3a5f]" />
+                    <span className="text-xs font-bold text-slate-800">Offline & Sync Status</span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                      isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {isOnline ? 'Connected' : 'Offline'}
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs text-slate-600 mb-3">
+                  <div className="flex justify-between items-center">
+                    <span>Pending Local Records:</span>
+                    <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                      {pendingCount}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span>Last Cloud Sync:</span>
+                    <span className="text-slate-500 font-medium">{formatLastSync(lastSyncTime)}</span>
+                  </div>
+                  <div className="flex items-start gap-1.5 text-[11px] text-slate-500 bg-slate-50 p-2 rounded border border-slate-100">
+                    <FiAlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <span>
+                      {isOnline
+                        ? 'All inspection records are backed by resilient IndexedDB and auto-commit to PostgreSQL.'
+                        : 'Operating in rural/mandi offline mode. All test data is preserved locally.'}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerSync();
+                    setSyncDropdownOpen(false);
+                  }}
+                  disabled={!isOnline || isSyncing}
+                  className={`w-full py-1.5 px-3 rounded text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
+                    !isOnline || isSyncing
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-[#1e3a5f] hover:bg-[#152843] text-white shadow-sm'
+                  }`}
+                >
+                  <FiRefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'Syncing...' : 'Sync Pending Records Now'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Language Selector */}
           <div className="relative" ref={langDropdownRef}>
             <button

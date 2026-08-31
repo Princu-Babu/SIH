@@ -19,6 +19,32 @@ const queryClient = new QueryClient({
   },
 });
 
+// Register Service Worker for Offline PWA Support
+if ('serviceWorker' in navigator && process.env.NODE_ENV !== 'test') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('[PWA] NAWI-ReportPro Service Worker registered with scope:', registration.scope);
+
+        // Check for updates
+        registration.onupdatefound = () => {
+          const installingWorker = registration.installing;
+          if (installingWorker) {
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('[PWA] New NAWI-ReportPro version available. Ready for offline use.');
+              }
+            };
+          }
+        };
+      })
+      .catch((error) => {
+        console.warn('[PWA] Service Worker registration failed (normal in dev/non-https environments):', error.message);
+      });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

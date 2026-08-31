@@ -7,11 +7,11 @@ Last visited: 2026-08-30T11:46:26Z
 Current iteration: 0 / 32
 
 ## Milestones
-- [ ] Phase 0: Survey & Codebase Architecture Exploration (DISPATCHED - 3 Explorers running)
-  - [ ] Explorer 1 (Conv ID 0d57cd2e): Client architecture, UI components, canvas/charting, PWA/IndexedDB status
-  - [ ] Explorer 2 (Conv ID 16a9e321): Server architecture, DB schema, REST API, verification endpoints, telemetry simulator
-  - [ ] Explorer 3 (Conv ID 2c51abea): Metrological calculation engines, OIML R-76 compliance, uncertainty budget, test infrastructure
-- [ ] Phase 1: PROJECT.md Feature Inventory & Interface Contracts
+- [x] Phase 0: Survey & Codebase Architecture Exploration (COMPLETED)
+  - [x] Explorer 1: Client architecture, UI components, canvas/charting, PWA/IndexedDB status (DONE)
+  - [x] Explorer 2: Server architecture, DB schema, REST API, verification endpoints, telemetry simulator (DONE)
+  - [x] Explorer 3: Metrological calculation engines, OIML R-76 compliance, uncertainty budget, test infrastructure (DONE)
+- [x] Phase 1: PROJECT.md Feature Inventory & Interface Contracts (COMPLETED)
 - [ ] Dual Track Dispatch:
   - [ ] Track A: E2E Testing Orchestrator (Tiers 1-4 tests, TEST_INFRA.md, TEST_READY.md)
   - [ ] Track B: Milestone Implementations

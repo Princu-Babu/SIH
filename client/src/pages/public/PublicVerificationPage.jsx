@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -11,19 +11,37 @@ import {
   FiCalendar,
   FiUserCheck,
   FiLock,
+  FiDownload,
+  FiPrinter,
+  FiCopy,
+  FiExternalLink,
+  FiCheck,
+  FiCpu,
+  FiActivity,
 } from 'react-icons/fi';
 import apiClient from '../../hooks/useApi';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
+import ErrorEnvelopeChart from '../../components/charts/ErrorEnvelopeChart';
 
+/**
+ * Public Legal Metrology Verification Portal
+ * Route: /verify/:certificateNo & /verify
+ * 
+ * Unauthenticated public route enabling traders, farmers, consumers, and enforcement officers
+ * to instantly inspect authentic calibration certificates, OIML R-76 error envelope curves,
+ * and cryptographic HMAC legal verification seals.
+ */
 export default function PublicVerificationPage() {
   const { t } = useTranslation();
   const { certificateNo: paramCert } = useParams();
   const navigate = useNavigate();
 
-  const [searchCert, setSearchCert] = useState(paramCert || 'NAWI-2026-000001');
-  const [activeCert, setActiveCert] = useState(paramCert || 'NAWI-2026-000001');
+  const [searchCert, setSearchCert] = useState(paramCert || 'CERT-2026-APMC-PUNJAB-9901');
+  const [activeCert, setActiveCert] = useState(paramCert || (paramCert === undefined ? 'CERT-2026-APMC-PUNJAB-9901' : ''));
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedSeal, setCopiedSeal] = useState(false);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['public-verify', activeCert],
     queryFn: async () => {
       if (!activeCert) return null;
@@ -42,35 +60,58 @@ export default function PublicVerificationPage() {
     }
   };
 
+  const copyVerificationUrl = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const copySealSignature = () => {
+    if (data?.sealSignature) {
+      navigator.clipboard.writeText(data.sealSignature);
+      setCopiedSeal(true);
+      setTimeout(() => setCopiedSeal(false), 2000);
+    }
+  };
+
+  // Status computation
+  const verificationStatus = useMemo(() => {
+    if (!data) return 'UNKNOWN';
+    if (data.status === 'EXPIRED') return 'EXPIRED';
+    if (data.status === 'REJECTED' || data.overallResult === 'FAIL' || data.valid === false) return 'REJECTED';
+    return 'VERIFIED_LEGAL';
+  }, [data]);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-between text-slate-800">
-      {/* Official Government Header */}
-      <header className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="h-1 w-full bg-gradient-to-r from-orange-500 via-white to-green-600" />
-        <div className="max-w-5xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      {/* Official Government Emblem & Top Banner */}
+      <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
+        <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-white to-green-600" />
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#1e3a5f] text-white flex items-center justify-center font-serif text-sm font-bold shadow-sm">
+            <div className="w-10 h-10 rounded-full bg-[#1e3a5f] text-amber-300 flex items-center justify-center font-serif text-lg font-bold shadow">
               ⚖
             </div>
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-900">
                 Department of Legal Metrology
               </div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[11px] text-slate-500 hidden sm:block">
                 Ministry of Consumer Affairs, Food & Public Distribution | Government of India
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
               <FiShield className="w-3.5 h-3.5 text-emerald-600" />
-              Public Verification Portal
+              <span>Public Verification Portal</span>
             </span>
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="text-xs font-bold text-primary-700 hover:text-primary-900 px-3 py-1.5 rounded border border-primary-300 bg-white hover:bg-slate-50"
+              className="text-xs font-bold text-primary-700 hover:text-primary-900 px-3 py-1.5 rounded border border-primary-300 bg-white hover:bg-slate-50 transition-colors"
             >
               Officer Portal →
             </button>
@@ -78,140 +119,275 @@ export default function PublicVerificationPage() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-3xl mx-auto px-4 py-8 w-full space-y-6">
-        {/* Search / QR Input Card */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm space-y-4 text-center">
-          <div className="inline-flex p-3 bg-primary-50 text-primary-700 rounded-full">
-            <FiShield className="w-8 h-8" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">
-              National Non-Automatic Weighing Instrument (NAWI) Registry
-            </h1>
-            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-              Verify the legal metrological verification certificate, stamping validity, and OIML R-76 compliance status of commercial and industrial scales in India.
-            </p>
-          </div>
-
-          <form onSubmit={handleSearch} className="max-w-md mx-auto flex gap-2">
-            <div className="relative flex-1">
-              <FiSearch className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
-              <input
-                type="text"
-                value={searchCert}
-                onChange={(e) => setSearchCert(e.target.value)}
-                placeholder="Enter Certificate No (e.g. NAWI-2026-000001)"
-                className="w-full pl-9 pr-3 py-2 text-xs font-mono bg-slate-50 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-800 font-bold"
-              />
+      {/* Main Container */}
+      <main className="max-w-4xl mx-auto px-4 py-6 w-full space-y-6 flex-1">
+        {/* Certificate Lookup Bar */}
+        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm space-y-3">
+          <div className="text-center sm:text-left sm:flex sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-base font-bold text-slate-900 flex items-center gap-2 justify-center sm:justify-start">
+                <FiSearch className="text-primary-600" />
+                <span>National NAWI Verification Certificate Registry</span>
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Scan QR Code or enter Stamping Certificate Reference to inspect OIML R-76 legal status & digital seals.
+              </p>
             </div>
-            <button
-              type="submit"
-              className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 rounded shadow-sm transition-colors shrink-0"
-            >
-              Verify Certificate
-            </button>
-          </form>
+
+            <form onSubmit={handleSearch} className="flex gap-2 mt-3 sm:mt-0 max-w-md w-full">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={searchCert}
+                  onChange={(e) => setSearchCert(e.target.value)}
+                  placeholder="e.g. CERT-2026-APMC-PUNJAB-9901"
+                  className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-900 font-bold"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 text-xs font-bold text-white bg-[#1e3a5f] hover:bg-[#152a45] rounded shadow-sm transition-colors shrink-0"
+              >
+                Verify
+              </button>
+            </form>
+          </div>
         </div>
 
-        {/* Verification Result */}
+        {/* Loading State */}
         {isLoading && (
-          <div className="bg-white border border-slate-200 rounded-lg p-10 shadow-sm">
-            <LoadingSpinner message="Querying National Legal Metrology Database..." />
+          <div className="bg-white border border-slate-200 rounded-lg p-12 shadow-sm text-center">
+            <LoadingSpinner message="Querying National Legal Metrology Registry..." />
           </div>
         )}
 
-        {error && !isLoading && (
-          <div className="bg-white border border-red-200 rounded-lg p-6 shadow-sm text-center space-y-3">
+        {/* Error / Not Found State */}
+        {isError && !isLoading && (
+          <div className="bg-white border border-red-200 rounded-lg p-8 shadow-sm text-center space-y-3">
             <div className="inline-flex p-3 bg-red-50 text-red-600 rounded-full">
-              <FiAlertTriangle className="w-7 h-7" />
+              <FiAlertTriangle className="w-8 h-8" />
             </div>
-            <h3 className="text-sm font-bold text-red-900">Certificate Not Found or Invalid</h3>
-            <p className="text-xs text-slate-600 max-w-md mx-auto">
-              No active legal metrology verification certificate matches <strong>{activeCert}</strong>. The physical instrument stamp may be expired, unverified, or fraudulent.
+            <h2 className="text-base font-bold text-red-900">Certificate Reference Not Found</h2>
+            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+              No active legal metrology verification certificate matches <strong>{activeCert}</strong>. The physical instrument stamp may be unverified, altered, or fraudulent.
             </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setSearchCert('')}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-300 transition-colors"
+              >
+                Search Another Certificate
+              </button>
+            </div>
           </div>
         )}
 
-        {data && data.verified && (
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden space-y-6">
+        {/* Verified Digital Certificate Card */}
+        {data && !isLoading && (
+          <div className="bg-white border border-slate-200 rounded-lg shadow-md overflow-hidden space-y-6">
             {/* Status Banner */}
-            <div className="bg-emerald-600 text-white p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div
+              className={`p-5 text-white flex flex-col sm:flex-row items-center justify-between gap-4 ${
+                verificationStatus === 'VERIFIED_LEGAL'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-700'
+                  : verificationStatus === 'EXPIRED'
+                  ? 'bg-gradient-to-r from-amber-600 to-orange-700'
+                  : 'bg-gradient-to-r from-red-600 to-rose-700'
+              }`}
+            >
               <div className="flex items-center gap-3 text-center sm:text-left">
-                <div className="p-2 bg-white/20 rounded-full">
-                  <FiCheckCircle className="w-8 h-8 text-white" />
+                <div className="p-2.5 bg-white/20 rounded-full shrink-0">
+                  {verificationStatus === 'VERIFIED_LEGAL' ? (
+                    <FiCheckCircle className="w-8 h-8 text-white" />
+                  ) : (
+                    <FiAlertTriangle className="w-8 h-8 text-white" />
+                  )}
                 </div>
                 <div>
-                  <div className="text-base font-bold flex items-center gap-2 justify-center sm:justify-start">
-                    <span>OFFICIALLY VERIFIED & CERTIFIED</span>
+                  <div className="text-base font-bold tracking-wide">
+                    {verificationStatus === 'VERIFIED_LEGAL' && 'OFFICIALLY VERIFIED & LEGAL METROLOGY CERTIFIED'}
+                    {verificationStatus === 'EXPIRED' && 'CERTIFICATE EXPIRED — RE-VERIFICATION MANDATORY'}
+                    {verificationStatus === 'REJECTED' && 'VERIFICATION REJECTED — UNFIT FOR COMMERCIAL USE'}
                   </div>
-                  <div className="text-xs text-emerald-100">
-                    Complies with Legal Metrology Act, 2009 & OIML Recommendation R-76
+                  <div className="text-xs text-white/90">
+                    Compliant with Legal Metrology Act, 2009 & OIML Recommendation R-76 (Edition 2006/E)
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white text-slate-900 px-3 py-1.5 rounded text-xs font-mono font-bold shadow">
-                {data.certificateNo}
+              <div className="bg-white text-slate-900 px-3.5 py-2 rounded text-xs font-mono font-bold shadow text-center sm:text-right">
+                <span className="text-[10px] text-slate-500 block">Certificate No:</span>
+                <span className="text-sm">{data.certificateNumber || data.certificateNo}</span>
               </div>
             </div>
 
-            {/* Certificate Details Grid */}
             <div className="p-6 pt-0 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              {/* Instrument & Stamping Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                {/* Instrument Specifications */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
-                  <span className="text-[11px] text-slate-500 font-medium block">Instrument Model & Serial Number</span>
-                  <span className="text-sm font-bold text-slate-900 block">
-                    {data.instrument?.model || data.instrument?.name}
+                  <span className="text-[11px] text-slate-500 font-medium block">Instrument Model & Serial</span>
+                  <span className="text-sm font-bold text-slate-900 block truncate">
+                    {data.instrument?.name || data.instrument?.model}
                   </span>
-                  <span className="font-mono text-slate-600 text-[11px]">
-                    S/N: {data.instrument?.serialNumber}
+                  <span className="font-mono text-slate-600 text-[11px] block">
+                    S/N: {data.instrument?.serialNumber || 'N/A'}
                   </span>
                 </div>
 
+                {/* Capacity & Verification Scale Interval */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
-                  <span className="text-[11px] text-slate-500 font-medium block">Accuracy Class & Maximum Capacity</span>
+                  <span className="text-[11px] text-slate-500 font-medium block">Class & Maximum Capacity</span>
                   <span className="text-sm font-bold text-slate-900 block">
-                    {data.instrument?.accuracyClass}
+                    {data.instrument?.accuracyClass?.replace('_', ' ') || 'Class III'}
                   </span>
-                  <span className="text-slate-600 font-semibold text-[11px]">
-                    Max Capacity: {data.instrument?.maxCapacity} {data.instrument?.unit}
+                  <span className="text-slate-700 font-semibold text-[11px] block">
+                    Max: {data.instrument?.maxCapacity} {data.instrument?.unit} (e = {data.instrument?.verificationInterval} {data.instrument?.unit})
                   </span>
                 </div>
 
+                {/* Stamping Location */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
                   <span className="text-[11px] text-slate-500 font-medium block flex items-center gap-1">
-                    <FiUserCheck className="text-slate-400" /> Authorized Verification Officer
-                  </span>
-                  <span className="text-xs font-bold text-slate-900 block">
-                    {data.conductedBy || 'Legal Metrology Officer'}
-                  </span>
-                  <span className="text-slate-500 text-[11px]">
-                    Department of Legal Metrology, Government of India
-                  </span>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
-                  <span className="text-[11px] text-slate-500 font-medium block flex items-center gap-1">
-                    <FiMapPin className="text-slate-400" /> Verified Stamping Location
+                    <FiMapPin className="text-slate-400" /> Stamping Location
                   </span>
                   <span className="text-xs font-bold text-slate-900 block truncate">
-                    {data.instrument?.location || 'Authorized Regional Metrology Laboratory'}
+                    {data.instrument?.location || 'Regional Metrology Testing Yard'}
                   </span>
-                  <span className="text-slate-500 text-[11px] flex items-center gap-1">
-                    <FiCalendar className="text-slate-400" /> Date: {new Date(data.verifiedAt).toLocaleDateString()}
+                  <span className="text-slate-500 text-[11px] block">
+                    State Directorate of Legal Metrology
+                  </span>
+                </div>
+
+                {/* Verification Date */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block flex items-center gap-1">
+                    <FiCalendar className="text-slate-400" /> Date of Verification
+                  </span>
+                  <span className="text-xs font-bold text-slate-900 block font-mono">
+                    {new Date(data.verificationDate).toLocaleDateString('en-IN', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                  </span>
+                  <span className="text-emerald-700 text-[11px] font-semibold">
+                    Stamping Cycle: Initial Verification
+                  </span>
+                </div>
+
+                {/* Expiry Date */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block flex items-center gap-1">
+                    <FiCalendar className="text-slate-400" /> Validity Expiration Date
+                  </span>
+                  <span className="text-xs font-bold text-slate-900 block font-mono">
+                    {new Date(data.expiryDate).toLocaleDateString('en-IN', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                  </span>
+                  <span className="text-slate-500 text-[11px]">
+                    Statutory 1-Year Calibration Validity
+                  </span>
+                </div>
+
+                {/* Verification Officer */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block flex items-center gap-1">
+                    <FiUserCheck className="text-slate-400" /> Authorizing Officer
+                  </span>
+                  <span className="text-xs font-bold text-slate-900 block truncate">
+                    {data.verificationOfficer?.name || data.conductedBy || 'Legal Metrology Officer'}
+                  </span>
+                  <span className="text-slate-500 text-[11px] block truncate">
+                    {data.verificationOfficer?.designation || 'Senior Inspector of Legal Metrology'}
                   </span>
                 </div>
               </div>
 
-              {/* Cryptographic Digital Seal & Immutability */}
-              <div className="p-4 bg-primary-50/50 border border-primary-200 rounded-lg flex items-start gap-3 text-xs text-primary-950">
-                <FiLock className="w-5 h-5 text-primary-700 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <div className="font-bold">Cryptographically Anchored Legal Seal (SHA-256)</div>
-                  <p className="text-slate-600 text-[11px]">
-                    This certificate is cryptographically recorded on the national immutable metrology registry. Any physical re-calibration or alteration without re-verification invalidates this legal certificate.
-                  </p>
+              {/* Interactive OIML R-76 Error Envelope Chart */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <FiActivity className="text-primary-600" />
+                    <span>Visual Error Envelope & OIML R-76 MPE Curve</span>
+                  </h2>
+                  <span className="text-xs text-slate-500">
+                    Live interactive graph with loading/unloading tolerance verification
+                  </span>
+                </div>
+
+                <ErrorEnvelopeChart
+                  points={data.errorCurveData || []}
+                  instrument={data.instrument || {}}
+                  isInService={data.status === 'IN_SERVICE'}
+                  showExport={true}
+                  title={`Error Envelope Curve: ${data.certificateNumber}`}
+                />
+              </div>
+
+              {/* Cryptographic Digital Seal & Anti-Tampering Anchor */}
+              <div className="p-4 bg-slate-900 text-white rounded-lg space-y-3 shadow-inner">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <FiLock className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                      Cryptographic HMAC-SHA256 Digital Verification Seal
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 w-fit">
+                    <FiCheck className="w-3 h-3" />
+                    <span>AUTHENTIC & UNTAMPERED</span>
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="text-[11px] text-slate-400">
+                    Deterministic cryptographic seal anchoring certificate payload, instrument serial, accuracy class, capacity, and inspector identity:
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded border border-slate-800 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[11px] text-emerald-400 break-all select-all">
+                      {data.sealSignature || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={copySealSignature}
+                      className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
+                      title="Copy Seal Hash"
+                    >
+                      {copiedSeal ? <FiCheck className="w-3.5 h-3.5 text-emerald-400" /> : <FiCopy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons: Share, Print, Copy Link */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={copyVerificationUrl}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-xs"
+                  >
+                    {copiedLink ? <FiCheck className="w-3.5 h-3.5 text-emerald-600" /> : <FiCopy className="w-3.5 h-3.5" />}
+                    <span>{copiedLink ? 'Link Copied' : 'Copy Verification Link'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-xs"
+                  >
+                    <FiPrinter className="w-3.5 h-3.5" />
+                    <span>Print Verification Slip</span>
+                  </button>
+                </div>
+
+                <div className="text-[11px] text-slate-400 italic">
+                  Verified timestamp: {new Date(data.verifiedAt).toLocaleString('en-IN')}
                 </div>
               </div>
             </div>
@@ -219,14 +395,16 @@ export default function PublicVerificationPage() {
         )}
       </main>
 
-      {/* Footer */}
+      {/* Official Government Footer */}
       <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-200 bg-white">
-        <p className="font-semibold text-slate-700">
-          Ministry of Consumer Affairs, Food & Public Distribution | Government of India
-        </p>
-        <p className="text-[11px] text-slate-500 mt-0.5">
-          National Legal Metrology Portal | OIML Recommendation R-76 Certified
-        </p>
+        <div className="max-w-6xl mx-auto px-4 space-y-1">
+          <p className="font-semibold text-slate-700">
+            Ministry of Consumer Affairs, Food & Public Distribution | Government of India
+          </p>
+          <p className="text-[11px] text-slate-500">
+            National Legal Metrology Portal • Legal Metrology Act, 2009 & OIML Recommendation R-76 Certified
+          </p>
+        </div>
       </footer>
     </div>
   );

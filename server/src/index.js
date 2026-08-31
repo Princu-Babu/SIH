@@ -12,6 +12,9 @@ const reportsRoutes = require('./routes/reports.routes');
 const usersRoutes = require('./routes/users.routes');
 const auditRoutes = require('./routes/audit.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const telemetryRoutes = require('./routes/telemetry.routes');
+const batchRoutes = require('./routes/batch.routes');
+const syncRoutes = require('./routes/sync.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -52,6 +55,9 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/telemetry', telemetryRoutes);
+app.use('/api/batch', batchRoutes);
+app.use('/api/sync', syncRoutes);
 
 // 404 Route Not Found Handler
 app.use((req, res, next) => {
