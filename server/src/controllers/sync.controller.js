@@ -45,6 +45,13 @@ async function syncBatch(req, res, next) {
       });
     }
 
+    if (!batchKey || typeof batchKey !== 'string' || !batchKey.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing or empty required field: idempotencyKey is required for batch sync.',
+      });
+    }
+
     if (sessions.length === 0) {
       return res.status(400).json({
         success: false,
@@ -52,8 +59,8 @@ async function syncBatch(req, res, next) {
       });
     }
 
-    // Check in-memory idempotency cache if batchKey is present
-    if (batchKey && idempotencyStore.has(batchKey)) {
+    // Check in-memory idempotency cache if batchKey is present (Express HTTP routes)
+    if (req.app && batchKey && idempotencyStore.has(batchKey)) {
       const cached = idempotencyStore.get(batchKey);
       return res.status(200).json({
         success: true,
@@ -73,9 +80,19 @@ async function syncBatch(req, res, next) {
     let duplicateCount = 0;
     let syncedCount = 0;
 
+    const mapStatus = (rawStatus, overall) => {
+      const s = String(rawStatus || '').toUpperCase();
+      if (['PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED'].includes(s)) return s;
+      if (s === 'REJECTED' || s === 'REJECT' || overall === 'FAIL') return 'FAILED';
+      return 'COMPLETED';
+    };
+
     for (const sessionData of sessions) {
       const itemKey = sessionData.idempotencyKey || sessionData.localId || `sync_${Date.now()}_${Math.random()}`;
       const localId = sessionData.localId || itemKey;
+      const isFail = sessionData.overallStatus === 'REJECTED' || sessionData.overallResult === 'FAIL';
+      const sessionStatus = mapStatus(sessionData.status || sessionData.overallStatus, sessionData.overallResult);
+      const overallResult = isFail ? 'FAIL' : 'PASS';
 
       // 1. Check DB audit logs if available
       let existingAudit = null;
@@ -134,9 +151,9 @@ async function syncBatch(req, res, next) {
                 certificateNo,
                 instrumentId: instrument ? instrument.id : sessionData.instrumentId,
                 conductedById: officerId,
-                status: sessionData.overallStatus || 'VERIFIED_LEGAL',
-                overallResult: sessionData.overallStatus === 'REJECTED' || sessionData.overallResult === 'FAIL' ? 'FAIL' : 'PASS',
-                notes: sessionData.notes || sessionData.remarks || 'Synced from offline mobile queue',
+                status: sessionStatus,
+                overallResult,
+                remarks: sessionData.notes || sessionData.remarks || 'Synced from offline mobile queue',
                 completedAt: sessionData.testDate ? new Date(sessionData.testDate) : new Date(),
                 testResults: sessionData.results ? {
                   create: sessionData.results.map((r) => ({
@@ -173,9 +190,9 @@ async function syncBatch(req, res, next) {
               certificateNo,
               instrumentId: sessionData.instrumentId,
               conductedById: officerId,
-              status: sessionData.overallStatus || 'VERIFIED_LEGAL',
-              overallResult: sessionData.overallStatus === 'REJECTED' || sessionData.overallResult === 'FAIL' ? 'FAIL' : 'PASS',
-              notes: sessionData.notes || sessionData.remarks || 'Synced from offline mobile queue',
+              status: sessionStatus,
+              overallResult,
+              remarks: sessionData.notes || sessionData.remarks || 'Synced from offline mobile queue',
               completedAt: sessionData.testDate ? new Date(sessionData.testDate) : new Date(),
             },
           });

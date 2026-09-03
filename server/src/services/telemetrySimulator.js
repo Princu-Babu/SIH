@@ -158,6 +158,14 @@ class TelemetrySimulator {
     this.startStreamingLoop();
   }
 
+  subscribe(res) {
+    this.listeners.add(res);
+  }
+
+  unsubscribe(res) {
+    this.listeners.delete(res);
+  }
+
   startStreamingLoop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => {
@@ -205,15 +213,27 @@ class TelemetrySimulator {
       this.isStable = false;
       this.stableCycleCount = 0;
     }
+    if (numeric !== 0 && Math.abs(numeric - this.zeroOffset) > (this.actualInterval_d * 0.5)) {
+      this._isZero = false;
+    }
     return this.getStatus();
   }
 
+  get isZero() {
+    if (this._isZero) return true;
+    const d = this.actualInterval_d || this.verificationInterval_e || 1;
+    const gross = (this.actualLoad > 0 ? this.actualLoad : this.targetWeight) - this.zeroOffset;
+    return Math.abs(gross) <= (0.5 * d);
+  }
+
   zero() {
-    const currentGross = (this.actualLoad > 0 ? this.actualLoad : this.targetWeight) - this.zeroOffset;
+    const effectiveLoad = this.actualLoad > 0 ? this.actualLoad : this.targetWeight;
+    const currentGross = effectiveLoad - this.zeroOffset;
     const maxZeroRange = this.maxCapacity * 0.04;
     
     if (Math.abs(currentGross) <= maxZeroRange || this.actualLoad === 0 || this.targetWeight === 0) {
-      this.zeroOffset = this.actualLoad > 0 ? this.actualLoad : this.targetWeight;
+      this.zeroOffset = effectiveLoad;
+      this._isZero = true;
       this.tareWeight = 0;
       this.isTareActive = false;
       this.isStable = true;
@@ -312,8 +332,9 @@ class TelemetrySimulator {
     
     const delta = this.targetWeight - this.actualLoad;
     if (Math.abs(delta) > 0.00001) {
-      this.actualLoad += delta * this.settlingSpeed;
-      if (Math.abs(this.targetWeight - this.actualLoad) < (d * 0.1)) {
+      const speed = this.noiseLevel === 0 ? 0.75 : this.settlingSpeed;
+      this.actualLoad += delta * speed;
+      if (Math.abs(this.targetWeight - this.actualLoad) < (d * 0.25)) {
         this.actualLoad = this.targetWeight;
       }
     }

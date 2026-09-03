@@ -6,9 +6,15 @@
   body {
     @apply bg-surface-50 text-slate-800 font-sans;
   }
+
+  /* Cross-browser scrollbar support (Firefox) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+  }
 }
 
-/* Custom scrollbars for tables and panels */
+/* Custom scrollbars for tables and panels (WebKit) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

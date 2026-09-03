@@ -1,119 +1,130 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 
 import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/shared/ProtectedRoute';
+import LoadingSpinner from './components/shared/LoadingSpinner';
 
+// Eager load critical entry pages
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
-import InstrumentListPage from './pages/instruments/InstrumentListPage';
-import InstrumentFormPage from './pages/instruments/InstrumentFormPage';
-import InstrumentDetailPage from './pages/instruments/InstrumentDetailPage';
-import TestSessionListPage from './pages/tests/TestSessionListPage';
-import NewTestSessionPage from './pages/tests/NewTestSessionPage';
-import TestSessionDetailPage from './pages/tests/TestSessionDetailPage';
-import TestDataEntryPage from './pages/tests/TestDataEntryPage';
-import ReportsHubPage from './pages/reports/ReportsHubPage';
-import ReportPage from './pages/reports/ReportPage';
-import UserManagementPage from './pages/users/UserManagementPage';
-import AuditLogPage from './pages/audit/AuditLogPage';
-import SettingsPage from './pages/SettingsPage';
-import PublicVerificationPage from './pages/public/PublicVerificationPage';
-import NotFoundPage from './pages/NotFoundPage';
+
+// Lazy load secondary/heavy test & report pages
+const InstrumentListPage = lazy(() => import('./pages/instruments/InstrumentListPage'));
+const InstrumentFormPage = lazy(() => import('./pages/instruments/InstrumentFormPage'));
+const InstrumentDetailPage = lazy(() => import('./pages/instruments/InstrumentDetailPage'));
+const TestSessionListPage = lazy(() => import('./pages/tests/TestSessionListPage'));
+const NewTestSessionPage = lazy(() => import('./pages/tests/NewTestSessionPage'));
+const TestSessionDetailPage = lazy(() => import('./pages/tests/TestSessionDetailPage'));
+const TestDataEntryPage = lazy(() => import('./pages/tests/TestDataEntryPage'));
+const ReportsHubPage = lazy(() => import('./pages/reports/ReportsHubPage'));
+const ReportPage = lazy(() => import('./pages/reports/ReportPage'));
+const UserManagementPage = lazy(() => import('./pages/users/UserManagementPage'));
+const AuditLogPage = lazy(() => import('./pages/audit/AuditLogPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const PublicVerificationPage = lazy(() => import('./pages/public/PublicVerificationPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+const PageLoader = () => (
+  <div className="flex-1 flex items-center justify-center p-12 min-h-[300px]">
+    <LoadingSpinner message="Loading metrology module..." size="lg" />
+  </div>
+);
 
 export default function App() {
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/verify" element={<PublicVerificationPage />} />
-      <Route path="/verify/:certificateNo" element={<PublicVerificationPage />} />
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/verify" element={<PublicVerificationPage />} />
+        <Route path="/verify/:certificateNo" element={<PublicVerificationPage />} />
 
-      {/* Protected App Routes inside AppLayout */}
-      <Route
-        element={
-          <ProtectedRoute>
-            <AppLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-
-        {/* Instruments */}
-        <Route path="/instruments" element={<InstrumentListPage />} />
+        {/* Protected App Routes inside AppLayout */}
         <Route
-          path="/instruments/new"
           element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
-              <InstrumentFormPage />
+            <ProtectedRoute>
+              <AppLayout />
             </ProtectedRoute>
           }
-        />
-        <Route path="/instruments/:id" element={<InstrumentDetailPage />} />
-        <Route
-          path="/instruments/:id/edit"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
-              <InstrumentFormPage />
-            </ProtectedRoute>
-          }
-        />
+        >
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
 
-        {/* Test Sessions */}
-        <Route path="/tests" element={<TestSessionListPage />} />
-        <Route
-          path="/tests/new"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
-              <NewTestSessionPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/tests/:id" element={<TestSessionDetailPage />} />
-        <Route
-          path="/tests/:id/:testType"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
-              <TestDataEntryPage />
-            </ProtectedRoute>
-          }
-        />
+          {/* Instruments */}
+          <Route path="/instruments" element={<InstrumentListPage />} />
+          <Route
+            path="/instruments/new"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
+                <InstrumentFormPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/instruments/:id" element={<InstrumentDetailPage />} />
+          <Route
+            path="/instruments/:id/edit"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
+                <InstrumentFormPage />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Reports */}
-        <Route path="/reports" element={<ReportsHubPage />} />
-        <Route path="/reports/:sessionId" element={<ReportPage />} />
+          {/* Test Sessions */}
+          <Route path="/tests" element={<TestSessionListPage />} />
+          <Route
+            path="/tests/new"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
+                <NewTestSessionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/tests/:id" element={<TestSessionDetailPage />} />
+          <Route
+            path="/tests/:id/:testType"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
+                <TestDataEntryPage />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Admin & Inspector Management */}
-        <Route
-          path="/users"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN']}>
-              <UserManagementPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/audit"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
-              <AuditLogPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN']}>
-              <SettingsPage />
-            </ProtectedRoute>
-          }
-        />
-      </Route>
+          {/* Reports */}
+          <Route path="/reports" element={<ReportsHubPage />} />
+          <Route path="/reports/:sessionId" element={<ReportPage />} />
 
-      {/* Fallback */}
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+          {/* Admin & Inspector Management */}
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <UserManagementPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/audit"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'INSPECTOR']}>
+                <AuditLogPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
 
+        {/* Fallback */}
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </Suspense>
   );
 }

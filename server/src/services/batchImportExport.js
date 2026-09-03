@@ -400,7 +400,7 @@ async function exportSessionToCsv(sessionIdOrSession) {
 
   // 1. Session Metadata Header
   lines.push('================================================================================');
-  lines.push('NAWI-ReportPro OIML R-76 TEST SESSION METROLOGICAL REPORT (CSV EXPORT)');
+  lines.push('NATIONAL LEGAL METROLOGY — NAWI-ReportPro OIML R-76 TEST REPORT (CSV EXPORT)');
   lines.push('================================================================================');
   lines.push(`Certificate Number,${session.certificateNo}`);
   lines.push(`Overall Status,${session.status}`);

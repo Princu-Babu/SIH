@@ -487,8 +487,7 @@ export default function ErrorEnvelopeChart({
         <svg
           ref={svgRef}
           viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-          className="w-full h-auto select-none"
-          style={{ maxHeight: '420px' }}
+          className="w-full h-auto max-h-[420px] select-none"
         >
           <defs>
             {/* Shaded Tolerance Band Gradient */}

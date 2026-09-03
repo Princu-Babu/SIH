@@ -30,6 +30,7 @@ import PageHeader from '../components/shared/PageHeader';
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import EmptyState from '../components/shared/EmptyState';
 import Breadcrumb from '../components/layout/Breadcrumb';
 
 export default function DashboardPage() {
@@ -164,7 +165,7 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <div className="h-64 w-full" style={{minHeight: '256px'}}>
+          <div className="h-64 w-full min-h-[256px]">
             <ResponsiveContainer width="100%" height="100%" minHeight={200}>
               <BarChart data={monthlyData} key={JSON.stringify(monthlyData)} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -195,7 +196,7 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <div className="h-64 w-full flex items-center justify-center" style={{minHeight: '256px'}}>
+          <div className="h-64 w-full flex items-center justify-center min-h-[256px]">
             <ResponsiveContainer width="100%" height="100%" minHeight={200}>
               <PieChart>
                 <Pie
@@ -300,19 +301,21 @@ export default function DashboardPage() {
                 ))}
                 {(!recentSessions || recentSessions.length === 0) && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center">
-                      <div className="flex flex-col items-center gap-2">
-                        <FiCheckCircle className="w-8 h-8 text-slate-300" />
-                        <p className="text-sm font-medium text-slate-500">No test sessions found</p>
-                        <p className="text-xs text-slate-400">Create your first test session to get started</p>
-                        <button
-                          type="button"
-                          onClick={() => navigate('/tests/new')}
-                          className="mt-2 px-3 py-1.5 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors"
-                        >
-                          + New Test Session
-                        </button>
-                      </div>
+                    <td colSpan={7} className="px-4 py-8">
+                      <EmptyState
+                        icon={FiCheckCircle}
+                        title={t('dashboard.noSessions', 'No test sessions found')}
+                        description={t('dashboard.noSessionsDesc', 'No inspection runs recorded yet. Start your first metrological verification test session.')}
+                        action={
+                          <button
+                            type="button"
+                            onClick={() => navigate('/tests/new')}
+                            className="px-4 py-2 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors shadow-sm"
+                          >
+                            + New Test Session
+                          </button>
+                        }
+                      />
                     </td>
                   </tr>
                 )}
