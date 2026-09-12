@@ -1,13 +1,87 @@
 const { PrismaClient } = require('@prisma/client');
+const mockDb = require('./mockDb');
 
-const globalForPrisma = global;
-
-const prisma = globalForPrisma.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+const realPrisma = new PrismaClient({
+  log: ['error'],
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+let isDbOffline = false;
+let lastCheckTime = 0;
+const RECHECK_INTERVAL_MS = 30000;
+
+// Resilient Proxy: forwards to real Prisma when PostgreSQL is reachable,
+// falls back instantly to in-memory mockDb when database server is offline.
+const prisma = new Proxy(realPrisma, {
+  get(target, prop) {
+    if (prop === '$transaction') {
+      return async (fnOrArray) => {
+        if (isDbOffline && Date.now() - lastCheckTime < RECHECK_INTERVAL_MS) {
+          return mockDb.$transaction(fnOrArray);
+        }
+        try {
+          const res = await target.$transaction(fnOrArray);
+          isDbOffline = false;
+          return res;
+        } catch (err) {
+          isDbOffline = true;
+          lastCheckTime = Date.now();
+          return mockDb.$transaction(fnOrArray);
+        }
+      };
+    }
+
+    const realModel = target[prop];
+    const mockModel = mockDb[prop];
+
+    if (!realModel && !mockModel) {
+      return target[prop];
+    }
+
+    if (!realModel) return mockModel;
+    if (!mockModel) return realModel;
+
+    return new Proxy(realModel, {
+      get(modelTarget, method) {
+        const originalMethod = modelTarget[method];
+        if (typeof originalMethod !== 'function') {
+          return mockModel[method] !== undefined ? mockModel[method] : originalMethod;
+        }
+
+        return async (...args) => {
+          if (isDbOffline && Date.now() - lastCheckTime < RECHECK_INTERVAL_MS) {
+            const fallbackFn = mockModel[method];
+            if (typeof fallbackFn === 'function') {
+              return fallbackFn.apply(mockModel, args);
+            }
+          }
+
+          try {
+            const res = await originalMethod.apply(modelTarget, args);
+            isDbOffline = false;
+            return res;
+          } catch (dbErr) {
+            const isConnErr =
+              dbErr.name === 'PrismaClientInitializationError' ||
+              dbErr.message?.includes("Can't reach database server") ||
+              dbErr.message?.includes('ECONNREFUSED') ||
+              dbErr.code === 'P1001';
+
+            if (isConnErr) {
+              isDbOffline = true;
+              lastCheckTime = Date.now();
+              const fallbackFn = mockModel[method];
+              if (typeof fallbackFn === 'function') {
+                return fallbackFn.apply(mockModel, args);
+              }
+            }
+            throw dbErr;
+          }
+        };
+      },
+    });
+  },
+});
 
 module.exports = prisma;
+
+

@@ -18,7 +18,7 @@ try {
 const verifyLimiter = rateLimit
   ? rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 120, // max 120 requests per window per IP
+      max: process.env.NODE_ENV === 'production' ? 60 : 500, // 500 in dev/demo, 60 in prod
       standardHeaders: true,
       legacyHeaders: false,
       message: {

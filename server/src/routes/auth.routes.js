@@ -19,21 +19,20 @@ if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is missing. Authentication routes cannot function securely without a configured JWT_SECRET.');
 }
 
-// Rate Limiting for Authentication Routes (prevent brute-force attacks)
-if (rateLimit) {
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 30, // max 30 requests per window per IP
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      success: false,
-      message: 'Too many authentication requests. Please try again after 15 minutes.',
-    },
-    skip: (req) => process.env.NODE_ENV === 'test',
-  });
-  router.use(authLimiter);
-}
+// Rate Limiting for Login Route (prevent brute-force password attacks)
+const authLimiter = rateLimit
+  ? rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: process.env.NODE_ENV === 'production' ? 10 : 500, // 500 in dev/demo, 10 in production
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        success: false,
+        message: 'Too many authentication attempts. Please try again after 15 minutes.',
+      },
+      skip: (req) => process.env.NODE_ENV === 'test',
+    })
+  : (req, res, next) => next();
 
 /**
  * POST /api/auth/login
@@ -41,6 +40,7 @@ if (rateLimit) {
  */
 router.post(
   '/login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),
