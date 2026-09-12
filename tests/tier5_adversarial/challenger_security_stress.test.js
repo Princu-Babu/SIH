@@ -543,7 +543,7 @@ describe('Tier 5: Adversarial Challenger Stress Harness - Backend Security & Cry
 
       // The response should include standard rate limit headers (ratelimit-limit, ratelimit-remaining)
       expect(res.headers).toHaveProperty('ratelimit-limit');
-      expect(Number(res.headers['ratelimit-limit'])).toBe(120);
+      expect(Number(res.headers['ratelimit-limit'])).toBe(500);
 
       spyFind.mockRestore();
     });

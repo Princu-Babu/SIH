@@ -342,7 +342,7 @@ describe('Tier 5: Adversarial Challenger Stress Harness - Frontend Verification 
     it('should contain official Ministry attribution and NIC credits', () => {
       expect(content).toContain('Ministry of Consumer Affairs, Food & Public Distribution');
       expect(content).toContain('Legal Metrology Division');
-      expect(content).toContain('National Informatics Centre (NIC)');
+      expect(content).toContain('SIH 2026 Prototype');
     });
 
     it('should credit Smart India Hackathon 2026 with Problem Statement 26035', () => {
@@ -350,9 +350,11 @@ describe('Tier 5: Adversarial Challenger Stress Harness - Frontend Verification 
       expect(content).toContain('26035');
     });
 
-    it('should provide a dynamic 7-digit visitor counter persisted in localStorage', () => {
-      expect(content).toContain("localStorage.getItem('gigw_portal_visitor_count')");
-      expect(content).toContain("padStart(7, '0')");
+    it('should provide a session status indicator instead of fake visitor counter', () => {
+      expect(content).toContain('Session Active');
+      // Verify fake counter is removed
+      expect(content).not.toContain('148924');
+      expect(content).not.toContain("localStorage.getItem('gigw_portal_visitor_count')");
     });
 
     it('should provide statutory modal with RTI and CPGRAMS portals', () => {
