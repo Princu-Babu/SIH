@@ -10,6 +10,7 @@ import {
   FiInfo,
   FiLayers,
   FiUploadCloud,
+  FiLock,
 } from 'react-icons/fi';
 
 import apiClient from '../../hooks/useApi';
@@ -61,6 +62,7 @@ export default function TestDataEntryPage() {
   };
 
   const isInitial = instrument.verificationType !== 'IN_SERVICE';
+  const isReadOnly = session?.status === 'COMPLETED';
 
   // -------------------------------------------------------------
   // STATE FOR TEST MODULES
@@ -134,12 +136,18 @@ export default function TestDataEntryPage() {
     const d = Number(instrument.actualScaleInterval_d) || e;
 
     // Type A: Standard uncertainty from repeatability series (standard deviation)
-    const readings = repeatabilityFull.map((p) => Number(p.reading) || 0).filter((v) => v > 0);
-    const n = readings.length || 1;
-    const mean = readings.reduce((a, b) => a + b, 0) / n;
-    const variance = readings.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (n > 1 ? n - 1 : 1);
-    const s = Math.sqrt(variance);
-    const u_A = roundTo(s / Math.sqrt(n), 6);
+    const readings = repeatabilityFull
+      .map((p) => p.reading)
+      .filter((v) => v !== '' && !isNaN(Number(v)))
+      .map(Number);
+    const n = readings.length;
+    let u_A = 0;
+    if (n > 1) {
+      const mean = readings.reduce((a, b) => a + b, 0) / n;
+      const variance = readings.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (n - 1);
+      const s = Math.sqrt(variance);
+      u_A = roundTo(s / Math.sqrt(n), 6);
+    }
 
     // Type B: Reference standard weights uncertainty (Class F1 / E2 standard)
     const u_weights = roundTo((0.00005 * max) / Math.sqrt(3), 6);
@@ -157,47 +165,158 @@ export default function TestDataEntryPage() {
     return { u_A, u_weights, u_res, u_ecc, u_c, k, U_expanded };
   }, [repeatabilityFull, instrument]);
 
-  // Pre-fill initial points when instrument is loaded
+  // Initialize test points: load saved session results if available, otherwise start with blank inputs
   useEffect(() => {
-    if (instrument && instrument.maxCapacity) {
-      const max = Number(instrument.maxCapacity);
-      const points = [
-        { percent: 0, load: 0, incReading: 0, decReading: 0 },
-        { percent: 20, load: roundTo(max * 0.2, 4), incReading: roundTo(max * 0.2, 4), decReading: roundTo(max * 0.2, 4) },
-        { percent: 40, load: roundTo(max * 0.4, 4), incReading: roundTo(max * 0.4, 4), decReading: roundTo(max * 0.4, 4) },
-        { percent: 60, load: roundTo(max * 0.6, 4), incReading: roundTo(max * 0.6, 4), decReading: roundTo(max * 0.6, 4) },
-        { percent: 80, load: roundTo(max * 0.8, 4), incReading: roundTo(max * 0.8, 4), decReading: roundTo(max * 0.8, 4) },
-        { percent: 100, load: max, incReading: max, decReading: max },
-      ];
-      setWeighingPoints(points);
+    if (!instrument || !instrument.maxCapacity) return;
+    const max = Number(instrument.maxCapacity);
 
-      // Pre-fill default test values for demo convenience
-      const halfLoad = roundTo(max * 0.5, 4);
-      setRepeatabilityHalf((prev) => prev.map((p) => ({ ...p, reading: p.reading || halfLoad })));
-      setRepeatabilityFull((prev) => prev.map((p) => ({ ...p, reading: p.reading || max })));
+    // Look for existing saved test result for this module in session
+    const existing = session?.testResults?.find(
+      (r) =>
+        r.testType === normalizedTestType ||
+        (normalizedTestType === 'WEIGHING_PERFORMANCE' && r.testType === 'WEIGHING') ||
+        (normalizedTestType === 'TEMPERATURE' && r.testType === 'TEMPERATURE_EFFECTS')
+    );
 
-      const eccLoad = roundTo(max / 3, 4);
-      setEccentricityPoints((prev) => prev.map((p) => ({ ...p, reading: p.reading || eccLoad })));
-      setTemperaturePoints([
-        { temp: 20, zeroReading: 0, spanReading: max },
-        { temp: 40, zeroReading: 0.0001, spanReading: max },
-        { temp: 10, zeroReading: -0.0001, spanReading: max },
+    if (existing && existing.data) {
+      const d = existing.data;
+      if (d.points && Array.isArray(d.points)) {
+        if (d.points[0]?.incReading !== undefined) {
+          setWeighingPoints(
+            d.points.map((p) => ({
+              percent: p.percent ?? p.percentMax,
+              load: p.load ?? p.appliedLoad,
+              incReading: p.incReading ?? '',
+              decReading: p.decReading ?? '',
+            }))
+          );
+        } else {
+          const standardPercents = [0, 20, 40, 60, 80, 100];
+          setWeighingPoints(
+            standardPercents.map((pct) => {
+              const load = roundTo(max * (pct / 100), 4);
+              const inc = d.points.find((p) => Math.abs(p.appliedLoad - load) < 0.001 && p.isIncreasing !== false);
+              const dec = d.points.find((p) => Math.abs(p.appliedLoad - load) < 0.001 && p.isIncreasing === false);
+              return {
+                percent: pct,
+                load,
+                incReading: inc?.indicatedValue ?? '',
+                decReading: dec?.indicatedValue ?? '',
+              };
+            })
+          );
+        }
+      }
+
+      if (d.series && Array.isArray(d.series)) {
+        const halfSeries = d.series[0]?.readings || [];
+        const fullSeries = d.series[1]?.readings || [];
+        setRepeatabilityHalf(
+          Array.from({ length: 6 }, (_, i) => ({ reading: halfSeries[i] ?? '', deltaL: 0 }))
+        );
+        setRepeatabilityFull(
+          Array.from({ length: 6 }, (_, i) => ({ reading: fullSeries[i] ?? '', deltaL: 0 }))
+        );
+      }
+
+      if (d.positions && Array.isArray(d.positions)) {
+        setEccentricityPoints(
+          d.positions.map((p, idx) => ({
+            position: p.position === 'CENTER' ? 'Center (Pos 1)' : `Pos ${idx + 1}`,
+            reading: p.indicatedValue ?? '',
+            deltaL: 0,
+          }))
+        );
+      }
+
+      if (d.temperaturePoints && Array.isArray(d.temperaturePoints)) {
+        setTemperaturePoints(
+          d.temperaturePoints.map((p) => ({
+            temp: p.temperature,
+            zeroReading: p.zeroIndication ?? '',
+            spanReading: p.spanIndication ?? '',
+          }))
+        );
+      }
+
+      if (d.timePoints && Array.isArray(d.timePoints)) {
+        setStabilityPoints(
+          d.timePoints.map((p) => ({
+            timeHrs: (p.timestampMinutes || 0) / 60,
+            reading: p.loadReading ?? '',
+          }))
+        );
+      }
+
+      if (d.creepReadings && Array.isArray(d.creepReadings)) {
+        setCreepPoints(
+          d.creepReadings.map((p) => ({
+            min: p.minute,
+            reading: p.indication ?? '',
+          }))
+        );
+        if (d.zeroReturn) {
+          setZeroReturnReading(d.zeroReturn.indicationAfterUnload ?? '');
+        }
+      }
+    } else {
+      // Default: clean blank inputs for genuine field entry (no synthetic passing pre-fills)
+      setWeighingPoints([
+        { percent: 0, load: 0, incReading: '', decReading: '' },
+        { percent: 20, load: roundTo(max * 0.2, 4), incReading: '', decReading: '' },
+        { percent: 40, load: roundTo(max * 0.4, 4), incReading: '', decReading: '' },
+        { percent: 60, load: roundTo(max * 0.6, 4), incReading: '', decReading: '' },
+        { percent: 80, load: roundTo(max * 0.8, 4), incReading: '', decReading: '' },
+        { percent: 100, load: max, incReading: '', decReading: '' },
       ]);
-      setStabilityPoints((prev) => prev.map((p) => ({ ...p, reading: p.reading || max })));
-      setCreepPoints((prev) => prev.map((p) => ({ ...p, reading: p.reading || max })));
-      setZeroReturnReading(0);
+      setRepeatabilityHalf(Array.from({ length: 6 }, () => ({ reading: '', deltaL: 0 })));
+      setRepeatabilityFull(Array.from({ length: 6 }, () => ({ reading: '', deltaL: 0 })));
+      setEccentricityPoints([
+        { position: 'Center (Pos 1)', reading: '', deltaL: 0 },
+        { position: 'Top-Left / Front-Left (Pos 2)', reading: '', deltaL: 0 },
+        { position: 'Top-Right / Front-Right (Pos 3)', reading: '', deltaL: 0 },
+        { position: 'Bottom-Right / Back-Right (Pos 4)', reading: '', deltaL: 0 },
+        { position: 'Bottom-Left / Back-Left (Pos 5)', reading: '', deltaL: 0 },
+      ]);
+      setTemperaturePoints([
+        { temp: 20, zeroReading: '', spanReading: '' },
+        { temp: 40, zeroReading: '', spanReading: '' },
+        { temp: 10, zeroReading: '', spanReading: '' },
+      ]);
+      setStabilityPoints([
+        { timeHrs: 0, reading: '' },
+        { timeHrs: 0.5, reading: '' },
+        { timeHrs: 1.0, reading: '' },
+        { timeHrs: 2.0, reading: '' },
+        { timeHrs: 4.0, reading: '' },
+        { timeHrs: 8.0, reading: '' },
+      ]);
+      setCreepPoints([
+        { min: 0, reading: '' },
+        { min: 5, reading: '' },
+        { min: 10, reading: '' },
+        { min: 15, reading: '' },
+        { min: 20, reading: '' },
+        { min: 25, reading: '' },
+        { min: 30, reading: '' },
+      ]);
+      setZeroReturnReading('');
     }
-  }, [instrument]);
+  }, [instrument, session, normalizedTestType]);
 
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async ({ isComplete }) => {
+      if (isReadOnly) {
+        throw new Error('Test session is finalized and sealed in read-only mode.');
+      }
+
       let payloadData = {};
       if (normalizedTestType === 'WEIGHING_PERFORMANCE' || normalizedTestType === 'WEIGHING') {
         payloadData = {
           points: weighingPoints.flatMap((pt) => [
-            { appliedLoad: Number(pt.load), indicatedValue: Number(pt.incReading), isIncreasing: true },
-            { appliedLoad: Number(pt.load), indicatedValue: Number(pt.decReading), isIncreasing: false },
+            { appliedLoad: Number(pt.load), indicatedValue: Number(pt.incReading) || 0, isIncreasing: true },
+            { appliedLoad: Number(pt.load), indicatedValue: Number(pt.decReading) || 0, isIncreasing: false },
           ]),
         };
       } else if (normalizedTestType === 'REPEATABILITY') {
@@ -274,16 +393,23 @@ export default function TestDataEntryPage() {
   const weighingCalculations = useMemo(() => {
     return weighingPoints.map((pt) => {
       const mpe = calculateMpe(pt.load, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
-      const incError = roundTo(Number(pt.incReading) - Number(pt.load), 5);
-      const decError = roundTo(Number(pt.decReading) - Number(pt.load), 5);
-      const incPass = Math.abs(incError) <= mpe;
-      const decPass = Math.abs(decError) <= mpe;
+      const hasInc = pt.incReading !== '' && pt.incReading !== null && !isNaN(Number(pt.incReading));
+      const hasDec = pt.decReading !== '' && pt.decReading !== null && !isNaN(Number(pt.decReading));
+
+      const incError = hasInc ? roundTo(Number(pt.incReading) - Number(pt.load), 5) : null;
+      const decError = hasDec ? roundTo(Number(pt.decReading) - Number(pt.load), 5) : null;
+      const incPass = hasInc ? Math.abs(incError) <= mpe : null;
+      const decPass = hasDec ? Math.abs(decError) <= mpe : null;
+      const isPass = (hasInc && hasDec) ? (incPass && decPass) : (hasInc ? incPass : (hasDec ? decPass : null));
+
       return {
         ...pt,
         mpe,
         incError,
         decError,
-        isPass: incPass && decPass,
+        hasInc,
+        hasDec,
+        isPass,
       };
     });
   }, [weighingPoints, instrument, isInitial]);
@@ -295,11 +421,17 @@ export default function TestDataEntryPage() {
     const mpeHalf = calculateMpe(halfLoad, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
     const mpeFull = calculateMpe(fullLoad, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
 
-    const halfReadings = repeatabilityHalf.map((p) => Number(p.reading) || 0).filter((v) => v > 0);
-    const fullReadings = repeatabilityFull.map((p) => Number(p.reading) || 0).filter((v) => v > 0);
+    const halfReadings = repeatabilityHalf
+      .map((p) => p.reading)
+      .filter((v) => v !== '' && !isNaN(Number(v)))
+      .map(Number);
+    const fullReadings = repeatabilityFull
+      .map((p) => p.reading)
+      .filter((v) => v !== '' && !isNaN(Number(v)))
+      .map(Number);
 
-    const halfRange = halfReadings.length > 0 ? roundTo(Math.max(...halfReadings) - Math.min(...halfReadings), 5) : 0;
-    const fullRange = fullReadings.length > 0 ? roundTo(Math.max(...fullReadings) - Math.min(...fullReadings), 5) : 0;
+    const halfRange = halfReadings.length >= 2 ? roundTo(Math.max(...halfReadings) - Math.min(...halfReadings), 5) : null;
+    const fullRange = fullReadings.length >= 2 ? roundTo(Math.max(...fullReadings) - Math.min(...fullReadings), 5) : null;
 
     return {
       halfLoad,
@@ -308,8 +440,8 @@ export default function TestDataEntryPage() {
       mpeFull,
       halfRange,
       fullRange,
-      halfPass: halfRange <= mpeHalf,
-      fullPass: fullRange <= mpeFull,
+      halfPass: halfRange !== null ? halfRange <= mpeHalf : null,
+      fullPass: fullRange !== null ? fullRange <= mpeFull : null,
     };
   }, [repeatabilityHalf, repeatabilityFull, instrument, isInitial]);
 
@@ -317,16 +449,20 @@ export default function TestDataEntryPage() {
   const eccentricityCalculations = useMemo(() => {
     const testLoad = roundTo(instrument.maxCapacity / 3, 4);
     const mpe = calculateMpe(testLoad, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
-    const centerReading = Number(eccentricityPoints[0]?.reading) || testLoad;
+    const centerVal = eccentricityPoints[0]?.reading;
+    const hasCenter = centerVal !== '' && !isNaN(Number(centerVal));
+    const centerReading = hasCenter ? Number(centerVal) : null;
 
     const evaluated = eccentricityPoints.map((pt) => {
-      const read = Number(pt.reading) || 0;
-      const diffFromCenter = roundTo(read - centerReading, 5);
-      const isPass = Math.abs(diffFromCenter) <= mpe;
+      const hasVal = pt.reading !== '' && !isNaN(Number(pt.reading));
+      const read = hasVal ? Number(pt.reading) : null;
+      const diffFromCenter = (read !== null && centerReading !== null) ? roundTo(read - centerReading, 5) : null;
+      const isPass = diffFromCenter !== null ? Math.abs(diffFromCenter) <= mpe : null;
       return { ...pt, diffFromCenter, mpe, isPass };
     });
 
-    const overallPass = evaluated.every((p) => p.isPass);
+    const anyEvaluated = evaluated.some((p) => p.isPass !== null);
+    const overallPass = anyEvaluated ? evaluated.every((p) => p.isPass === true) : null;
     return { testLoad, mpe, evaluated, overallPass };
   }, [eccentricityPoints, instrument, isInitial]);
 
@@ -335,12 +471,17 @@ export default function TestDataEntryPage() {
     const max = Number(instrument.maxCapacity);
     const mpe = calculateMpe(max, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
     const evaluated = temperaturePoints.map((pt) => {
-      const spanErr = roundTo(Number(pt.spanReading) - max, 5);
-      const zeroErr = roundTo(Number(pt.zeroReading), 5);
-      const isPass = Math.abs(spanErr) <= mpe && Math.abs(zeroErr) <= Number(instrument.verificationScaleInterval_e);
+      const hasSpan = pt.spanReading !== '' && !isNaN(Number(pt.spanReading));
+      const hasZero = pt.zeroReading !== '' && !isNaN(Number(pt.zeroReading));
+      const spanErr = hasSpan ? roundTo(Number(pt.spanReading) - max, 5) : null;
+      const zeroErr = hasZero ? roundTo(Number(pt.zeroReading), 5) : null;
+      const isPass = (hasSpan && hasZero)
+        ? (Math.abs(spanErr) <= mpe && Math.abs(zeroErr) <= Number(instrument.verificationScaleInterval_e))
+        : null;
       return { ...pt, spanErr, zeroErr, mpe, isPass };
     });
-    const overallPass = evaluated.every((p) => p.isPass);
+    const anyEvaluated = evaluated.some((p) => p.isPass !== null);
+    const overallPass = anyEvaluated ? evaluated.every((p) => p.isPass === true) : null;
     return { evaluated, overallPass };
   }, [temperaturePoints, instrument, isInitial]);
 
@@ -348,15 +489,19 @@ export default function TestDataEntryPage() {
   const stabilityCalculations = useMemo(() => {
     const max = Number(instrument.maxCapacity);
     const mpe = calculateMpe(max, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
-    const baseReading = Number(stabilityPoints[0]?.reading) || max;
+    const baseVal = stabilityPoints[0]?.reading;
+    const hasBase = baseVal !== '' && !isNaN(Number(baseVal));
+    const baseReading = hasBase ? Number(baseVal) : null;
 
     const evaluated = stabilityPoints.map((pt) => {
-      const read = Number(pt.reading) || 0;
-      const drift = roundTo(read - baseReading, 5);
-      const isPass = Math.abs(drift) <= mpe;
+      const hasVal = pt.reading !== '' && !isNaN(Number(pt.reading));
+      const read = hasVal ? Number(pt.reading) : null;
+      const drift = (read !== null && baseReading !== null) ? roundTo(read - baseReading, 5) : null;
+      const isPass = drift !== null ? Math.abs(drift) <= mpe : null;
       return { ...pt, drift, mpe, isPass };
     });
-    const overallPass = evaluated.every((p) => p.isPass);
+    const anyEvaluated = evaluated.some((p) => p.isPass !== null);
+    const overallPass = anyEvaluated ? evaluated.every((p) => p.isPass === true) : null;
     return { evaluated, overallPass };
   }, [stabilityPoints, instrument, isInitial]);
 
@@ -364,15 +509,20 @@ export default function TestDataEntryPage() {
   const creepCalculations = useMemo(() => {
     const max = Number(instrument.maxCapacity);
     const mpe = calculateMpe(max, instrument.verificationScaleInterval_e, instrument.accuracyClass, isInitial);
-    const read15 = Number(creepPoints.find((p) => p.min === 15)?.reading) || max;
-    const read30 = Number(creepPoints.find((p) => p.min === 30)?.reading) || max;
-    const creepDelta = roundTo(Math.abs(read30 - read15), 5);
+    const pt15 = creepPoints.find((p) => p.min === 15);
+    const pt30 = creepPoints.find((p) => p.min === 30);
+    const has15 = pt15 && pt15.reading !== '' && !isNaN(Number(pt15.reading));
+    const has30 = pt30 && pt30.reading !== '' && !isNaN(Number(pt30.reading));
+    const creepDelta = (has15 && has30) ? roundTo(Math.abs(Number(pt30.reading) - Number(pt15.reading)), 5) : null;
     const creepLimit = roundTo(0.2 * mpe, 5);
-    const creepPass = creepDelta <= creepLimit;
+    const creepPass = creepDelta !== null ? creepDelta <= creepLimit : null;
 
-    const zeroReturnErr = roundTo(Math.abs(Number(zeroReturnReading)), 5);
+    const hasZeroReturn = zeroReturnReading !== '' && !isNaN(Number(zeroReturnReading));
+    const zeroReturnErr = hasZeroReturn ? roundTo(Math.abs(Number(zeroReturnReading)), 5) : null;
     const zeroLimit = roundTo(0.5 * Number(instrument.verificationScaleInterval_e), 5);
-    const zeroPass = zeroReturnErr <= zeroLimit;
+    const zeroPass = zeroReturnErr !== null ? zeroReturnErr <= zeroLimit : null;
+
+    const overallPass = (creepPass !== null && zeroPass !== null) ? (creepPass && zeroPass) : null;
 
     return {
       creepDelta,
@@ -381,7 +531,7 @@ export default function TestDataEntryPage() {
       zeroReturnErr,
       zeroLimit,
       zeroPass,
-      overallPass: creepPass && zeroPass,
+      overallPass,
     };
   }, [creepPoints, zeroReturnReading, instrument, isInitial]);
 
@@ -422,6 +572,35 @@ export default function TestDataEntryPage() {
         }
       />
 
+      {/* Official Legal Status Banner when Session is Completed */}
+      {isReadOnly && (
+        <div className="bg-amber-50 border-2 border-amber-500 rounded-lg p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-amber-600 text-white rounded-full shrink-0 shadow-xs">
+              <FiLock className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-amber-950 uppercase tracking-wide flex items-center gap-2">
+                <span>COMPLETED &amp; SEALED — READ ONLY</span>
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-200 text-amber-900 border border-amber-400 rounded">
+                  LEGAL SEAL ACTIVE
+                </span>
+              </h3>
+              <p className="text-xs text-amber-800 mt-0.5">
+                This verification session has been finalized, digitally signed with an HMAC-SHA256 seal, and archived. All test measurements and metrological calculations are permanently locked against modification.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/reports/${sessionId}`)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-[#1e3a5f] hover:bg-[#152a45] rounded shadow-xs transition-colors shrink-0"
+          >
+            <span>View Certificate &amp; Seal →</span>
+          </button>
+        </div>
+      )}
+
       {/* Metrological Reference Header Card */}
       <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs">
         <div className="flex items-center gap-3">
@@ -452,6 +631,7 @@ export default function TestDataEntryPage() {
       <SerialTelemetryToolbar
         instrument={instrument}
         onCaptureReading={(captured) => {
+          if (isReadOnly) return;
           if (focusedField) {
             if (focusedField.type === 'weighing') {
               setWeighingPoints((prev) =>
@@ -500,8 +680,13 @@ export default function TestDataEntryPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsBatchCsvModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 rounded-lg text-xs transition-colors shadow-sm"
+                disabled={isReadOnly}
+                onClick={() => !isReadOnly && setIsBatchCsvModalOpen(true)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 font-bold border rounded-lg text-xs transition-colors shadow-sm ${
+                  isReadOnly
+                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+                }`}
               >
                 <FiUploadCloud className="w-3.5 h-3.5" />
                 <span>Batch CSV Weighbridge Import</span>
@@ -530,20 +715,25 @@ export default function TestDataEntryPage() {
                 {/* Lower MPE Limit (-1.0e step) */}
                 <path d="M 0 70 L 150 70 L 150 80 L 350 80 L 350 90 L 500 90" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="3 3" />
                 {/* Compliant Error Curve Data Line */}
-                <polyline
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth="2"
-                  points={weighingCalculations
-                    .map((pt, i) => {
-                      const x = (i / Math.max(1, weighingCalculations.length - 1)) * 480 + 10;
-                      const y = 50 - (pt.incError / Math.max(0.001, pt.mpe * 2)) * 35;
-                      return `${x},${Math.max(10, Math.min(90, y))}`;
-                    })
-                    .join(' ')}
-                />
+                {weighingCalculations.some((p) => p.hasInc) && (
+                  <polyline
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="2"
+                    points={weighingCalculations
+                      .map((pt, i) => {
+                        if (!pt.hasInc) return null;
+                        const x = (i / Math.max(1, weighingCalculations.length - 1)) * 480 + 10;
+                        const y = 50 - (pt.incError / Math.max(0.001, pt.mpe * 2)) * 35;
+                        return `${x},${Math.max(10, Math.min(90, y))}`;
+                      })
+                      .filter(Boolean)
+                      .join(' ')}
+                  />
+                )}
                 {/* Calculated Points */}
                 {weighingCalculations.map((pt, i) => {
+                  if (!pt.hasInc) return null;
                   const x = (i / Math.max(1, weighingCalculations.length - 1)) * 480 + 10;
                   const y = 50 - (pt.incError / Math.max(0.001, pt.mpe * 2)) * 35;
                   return (
@@ -595,49 +785,80 @@ export default function TestDataEntryPage() {
                       <input
                         type="number"
                         step="any"
+                        disabled={isReadOnly}
                         value={row.incReading}
+                        placeholder={isReadOnly ? '-' : '0.00'}
                         onFocus={() => setFocusedField({ type: 'weighing', index: idx, field: 'incReading' })}
                         onChange={(e) => {
+                          if (isReadOnly) return;
                           const val = e.target.value;
                           setWeighingPoints((prev) =>
                             prev.map((p, i) => (i === idx ? { ...p, incReading: val } : p))
                           );
                         }}
-                        className="w-24 px-2 py-1 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 font-bold"
+                        className={`w-24 px-2 py-1 border rounded font-bold ${
+                          isReadOnly
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                            : 'bg-white border-slate-300 focus:ring-1 focus:ring-primary-500'
+                        }`}
                       />
                     </td>
                     <td
                       className={`px-3 py-2.5 font-bold ${
-                        Math.abs(row.incError) <= row.mpe ? 'text-green-700' : 'text-red-600'
+                        row.incError === null
+                          ? 'text-slate-400'
+                          : Math.abs(row.incError) <= row.mpe
+                          ? 'text-green-700'
+                          : 'text-red-600'
                       }`}
                     >
-                      {row.incError > 0 ? `+${row.incError}` : row.incError}
+                      {row.incError === null ? '-' : row.incError > 0 ? `+${row.incError}` : row.incError}
                     </td>
                     <td className="px-3 py-2.5">
                       <input
                         type="number"
                         step="any"
+                        disabled={isReadOnly}
                         value={row.decReading}
+                        placeholder={isReadOnly ? '-' : '0.00'}
                         onFocus={() => setFocusedField({ type: 'weighing', index: idx, field: 'decReading' })}
                         onChange={(e) => {
+                          if (isReadOnly) return;
                           const val = e.target.value;
                           setWeighingPoints((prev) =>
                             prev.map((p, i) => (i === idx ? { ...p, decReading: val } : p))
                           );
                         }}
-                        className="w-24 px-2 py-1 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 font-bold"
+                        className={`w-24 px-2 py-1 border rounded font-bold ${
+                          isReadOnly
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                            : 'bg-white border-slate-300 focus:ring-1 focus:ring-primary-500'
+                        }`}
                       />
                     </td>
                     <td
                       className={`px-3 py-2.5 font-bold ${
-                        Math.abs(row.decError) <= row.mpe ? 'text-green-700' : 'text-red-600'
+                        row.decError === null
+                          ? 'text-slate-400'
+                          : Math.abs(row.decError) <= row.mpe
+                          ? 'text-green-700'
+                          : 'text-red-600'
                       }`}
                     >
-                      {row.decError > 0 ? `+${row.decError}` : row.decError}
+                      {row.decError === null ? '-' : row.decError > 0 ? `+${row.decError}` : row.decError}
                     </td>
                     <td className="px-3 py-2.5 font-bold text-slate-800">±{row.mpe}</td>
                     <td className="px-3 py-2.5 text-center font-sans">
-                      <StatusBadge status={row.isPass ? 'PASS' : 'FAIL'} size="xs" />
+                      <StatusBadge
+                        status={
+                          row.isPass === true
+                            ? 'PASS'
+                            : row.isPass === false
+                            ? 'FAIL'
+                            : 'PENDING'
+                        }
+                        size="xs"
+                      />
                     </td>
                   </tr>
                 ))}
@@ -667,7 +888,16 @@ export default function TestDataEntryPage() {
               <h3 className="text-xs font-bold text-slate-900">
                 Series 1: 50% Max Load ({repeatabilityCalculations.halfLoad} {instrument.unit}) — MPE: ±{repeatabilityCalculations.mpeHalf}
               </h3>
-              <StatusBadge status={repeatabilityCalculations.halfPass ? 'PASS' : 'FAIL'} size="xs" />
+              <StatusBadge
+                status={
+                  repeatabilityCalculations.halfPass === true
+                    ? 'PASS'
+                    : repeatabilityCalculations.halfPass === false
+                    ? 'FAIL'
+                    : 'PENDING'
+                }
+                size="xs"
+              />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
@@ -677,14 +907,21 @@ export default function TestDataEntryPage() {
                   <input
                     type="number"
                     step="any"
+                    disabled={isReadOnly}
                     value={item.reading}
+                    placeholder={isReadOnly ? '-' : '0.00'}
                     onChange={(e) => {
+                      if (isReadOnly) return;
                       const val = e.target.value;
                       setRepeatabilityHalf((prev) =>
                         prev.map((p, i) => (i === idx ? { ...p, reading: val } : p))
                       );
                     }}
-                    className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded font-mono font-bold"
+                    className={`w-full px-2 py-1 text-xs border rounded font-mono font-bold ${
+                      isReadOnly
+                        ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                        : 'bg-white border-slate-300'
+                    }`}
                   />
                 </div>
               ))}
@@ -692,7 +929,10 @@ export default function TestDataEntryPage() {
 
             <div className="text-xs flex items-center justify-between pt-2 border-t border-slate-200">
               <span className="text-slate-600">
-                Max Difference (ΔP): <strong className="font-mono">{repeatabilityCalculations.halfRange} {instrument.unit}</strong>
+                Max Difference (ΔP):{' '}
+                <strong className="font-mono">
+                  {repeatabilityCalculations.halfRange === null ? '-' : `${repeatabilityCalculations.halfRange} ${instrument.unit}`}
+                </strong>
               </span>
               <span className="text-slate-500">Tolerance Limit: ≤ {repeatabilityCalculations.mpeHalf} {instrument.unit}</span>
             </div>
@@ -704,7 +944,16 @@ export default function TestDataEntryPage() {
               <h3 className="text-xs font-bold text-slate-900">
                 Series 2: 100% Max Load ({repeatabilityCalculations.fullLoad} {instrument.unit}) — MPE: ±{repeatabilityCalculations.mpeFull}
               </h3>
-              <StatusBadge status={repeatabilityCalculations.fullPass ? 'PASS' : 'FAIL'} size="xs" />
+              <StatusBadge
+                status={
+                  repeatabilityCalculations.fullPass === true
+                    ? 'PASS'
+                    : repeatabilityCalculations.fullPass === false
+                    ? 'FAIL'
+                    : 'PENDING'
+                }
+                size="xs"
+              />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
@@ -714,14 +963,21 @@ export default function TestDataEntryPage() {
                   <input
                     type="number"
                     step="any"
+                    disabled={isReadOnly}
                     value={item.reading}
+                    placeholder={isReadOnly ? '-' : '0.00'}
                     onChange={(e) => {
+                      if (isReadOnly) return;
                       const val = e.target.value;
                       setRepeatabilityFull((prev) =>
                         prev.map((p, i) => (i === idx ? { ...p, reading: val } : p))
                       );
                     }}
-                    className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded font-mono font-bold"
+                    className={`w-full px-2 py-1 text-xs border rounded font-mono font-bold ${
+                      isReadOnly
+                        ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                        : 'bg-white border-slate-300'
+                    }`}
                   />
                 </div>
               ))}
@@ -729,7 +985,10 @@ export default function TestDataEntryPage() {
 
             <div className="text-xs flex items-center justify-between pt-2 border-t border-slate-200">
               <span className="text-slate-600">
-                Max Difference (ΔP): <strong className="font-mono">{repeatabilityCalculations.fullRange} {instrument.unit}</strong>
+                Max Difference (ΔP):{' '}
+                <strong className="font-mono">
+                  {repeatabilityCalculations.fullRange === null ? '-' : `${repeatabilityCalculations.fullRange} ${instrument.unit}`}
+                </strong>
               </span>
               <span className="text-slate-500">Tolerance Limit: ≤ {repeatabilityCalculations.mpeFull} {instrument.unit}</span>
             </div>
@@ -785,7 +1044,16 @@ export default function TestDataEntryPage() {
                 Applied Load: 1/3 Max = {eccentricityCalculations.testLoad} {instrument.unit} | MPE: ±{eccentricityCalculations.mpe} {instrument.unit}
               </p>
             </div>
-            <StatusBadge status={eccentricityCalculations.overallPass ? 'PASS' : 'FAIL'} size="sm" />
+            <StatusBadge
+              status={
+                eccentricityCalculations.overallPass === true
+                  ? 'PASS'
+                  : eccentricityCalculations.overallPass === false
+                  ? 'FAIL'
+                  : 'PENDING'
+              }
+              size="sm"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -820,23 +1088,42 @@ export default function TestDataEntryPage() {
                   <div>
                     <span className="font-bold text-slate-800 block">{pt.position}</span>
                     <span className="text-[11px] text-slate-500 font-mono">
-                      Diff from Center: {pt.diffFromCenter > 0 ? `+${pt.diffFromCenter}` : pt.diffFromCenter} {instrument.unit}
+                      Diff from Center:{' '}
+                      {pt.diffFromCenter === null
+                        ? '-'
+                        : `${pt.diffFromCenter > 0 ? `+${pt.diffFromCenter}` : pt.diffFromCenter} ${instrument.unit}`}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
                       step="any"
+                      disabled={isReadOnly}
                       value={pt.reading}
+                      placeholder={isReadOnly ? '-' : '0.00'}
                       onChange={(e) => {
+                        if (isReadOnly) return;
                         const val = e.target.value;
                         setEccentricityPoints((prev) =>
                           prev.map((p, i) => (i === idx ? { ...p, reading: val } : p))
                         );
                       }}
-                      className="w-24 px-2 py-1 bg-white border border-slate-300 rounded font-mono font-bold"
+                      className={`w-24 px-2 py-1 border rounded font-mono font-bold ${
+                        isReadOnly
+                          ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                          : 'bg-white border-slate-300'
+                      }`}
                     />
-                    <StatusBadge status={pt.isPass ? 'PASS' : 'FAIL'} size="xs" />
+                    <StatusBadge
+                      status={
+                        pt.isPass === true
+                          ? 'PASS'
+                          : pt.isPass === false
+                          ? 'FAIL'
+                          : 'PENDING'
+                      }
+                      size="xs"
+                    />
                   </div>
                 </div>
               ))}
@@ -859,7 +1146,16 @@ export default function TestDataEntryPage() {
                 Tested across operating temperatures. Zero drift must not exceed 1e per 5°C change.
               </p>
             </div>
-            <StatusBadge status={temperatureCalculations.overallPass ? 'PASS' : 'FAIL'} size="sm" />
+            <StatusBadge
+              status={
+                temperatureCalculations.overallPass === true
+                  ? 'PASS'
+                  : temperatureCalculations.overallPass === false
+                  ? 'FAIL'
+                  : 'PENDING'
+              }
+              size="sm"
+            />
           </div>
 
           <div className="overflow-x-auto">
@@ -883,35 +1179,62 @@ export default function TestDataEntryPage() {
                       <input
                         type="number"
                         step="any"
+                        disabled={isReadOnly}
                         value={row.zeroReading}
+                        placeholder={isReadOnly ? '-' : '0.00'}
                         onChange={(e) => {
+                          if (isReadOnly) return;
                           const val = e.target.value;
                           setTemperaturePoints((prev) =>
                             prev.map((p, i) => (i === idx ? { ...p, zeroReading: val } : p))
                           );
                         }}
-                        className="w-20 px-2 py-1 bg-white border border-slate-300 rounded font-bold"
+                        className={`w-20 px-2 py-1 border rounded font-mono font-bold ${
+                          isReadOnly
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                            : 'bg-white border-slate-300'
+                        }`}
                       />
                     </td>
-                    <td className="px-3 py-2.5 font-bold text-slate-700">{row.zeroErr}</td>
+                    <td className="px-3 py-2.5 font-bold text-slate-700">
+                      {row.zeroErr === null ? '-' : `${row.zeroErr > 0 ? `+${row.zeroErr}` : row.zeroErr} ${instrument.unit}`}
+                    </td>
                     <td className="px-3 py-2.5">
                       <input
                         type="number"
                         step="any"
+                        disabled={isReadOnly}
                         value={row.spanReading}
+                        placeholder={isReadOnly ? '-' : '0.00'}
                         onChange={(e) => {
+                          if (isReadOnly) return;
                           const val = e.target.value;
                           setTemperaturePoints((prev) =>
                             prev.map((p, i) => (i === idx ? { ...p, spanReading: val } : p))
                           );
                         }}
-                        className="w-24 px-2 py-1 bg-white border border-slate-300 rounded font-bold"
+                        className={`w-24 px-2 py-1 border rounded font-mono font-bold ${
+                          isReadOnly
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                            : 'bg-white border-slate-300'
+                        }`}
                       />
                     </td>
-                    <td className="px-3 py-2.5 font-bold text-slate-700">{row.spanErr}</td>
+                    <td className="px-3 py-2.5 font-bold text-slate-700">
+                      {row.spanErr === null ? '-' : `${row.spanErr > 0 ? `+${row.spanErr}` : row.spanErr} ${instrument.unit}`}
+                    </td>
                     <td className="px-3 py-2.5 font-bold text-slate-800">±{row.mpe}</td>
                     <td className="px-3 py-2.5 text-center font-sans">
-                      <StatusBadge status={row.isPass ? 'PASS' : 'FAIL'} size="xs" />
+                      <StatusBadge
+                        status={
+                          row.isPass === true
+                            ? 'PASS'
+                            : row.isPass === false
+                            ? 'FAIL'
+                            : 'PENDING'
+                        }
+                        size="xs"
+                      />
                     </td>
                   </tr>
                 ))}
@@ -935,7 +1258,16 @@ export default function TestDataEntryPage() {
                 Span stability under sustained continuous load over an 8-hour period.
               </p>
             </div>
-            <StatusBadge status={stabilityCalculations.overallPass ? 'PASS' : 'FAIL'} size="sm" />
+            <StatusBadge
+              status={
+                stabilityCalculations.overallPass === true
+                  ? 'PASS'
+                  : stabilityCalculations.overallPass === false
+                  ? 'FAIL'
+                  : 'PENDING'
+              }
+              size="sm"
+            />
           </div>
 
           <div className="overflow-x-auto">
@@ -957,20 +1289,38 @@ export default function TestDataEntryPage() {
                       <input
                         type="number"
                         step="any"
+                        disabled={isReadOnly}
                         value={row.reading}
+                        placeholder={isReadOnly ? '-' : '0.00'}
                         onChange={(e) => {
+                          if (isReadOnly) return;
                           const val = e.target.value;
                           setStabilityPoints((prev) =>
                             prev.map((p, i) => (i === idx ? { ...p, reading: val } : p))
                           );
                         }}
-                        className="w-28 px-2 py-1 bg-white border border-slate-300 rounded font-bold"
+                        className={`w-28 px-2 py-1 border rounded font-mono font-bold ${
+                          isReadOnly
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                            : 'bg-white border-slate-300'
+                        }`}
                       />
                     </td>
-                    <td className="px-3 py-2.5 font-bold text-slate-700">{row.drift}</td>
+                    <td className="px-3 py-2.5 font-bold text-slate-700">
+                      {row.drift === null ? '-' : `${row.drift > 0 ? `+${row.drift}` : row.drift} ${instrument.unit}`}
+                    </td>
                     <td className="px-3 py-2.5 font-bold text-slate-800">±{row.mpe}</td>
                     <td className="px-3 py-2.5 text-center font-sans">
-                      <StatusBadge status={row.isPass ? 'PASS' : 'FAIL'} size="xs" />
+                      <StatusBadge
+                        status={
+                          row.isPass === true
+                            ? 'PASS'
+                            : row.isPass === false
+                            ? 'FAIL'
+                            : 'PENDING'
+                        }
+                        size="xs"
+                      />
                     </td>
                   </tr>
                 ))}
@@ -994,7 +1344,16 @@ export default function TestDataEntryPage() {
                 Evaluate creep under Max load for 30 min and zero return reading within 0.5e after load removal.
               </p>
             </div>
-            <StatusBadge status={creepCalculations.overallPass ? 'PASS' : 'FAIL'} size="sm" />
+            <StatusBadge
+              status={
+                creepCalculations.overallPass === true
+                  ? 'PASS'
+                  : creepCalculations.overallPass === false
+                  ? 'FAIL'
+                  : 'PENDING'
+              }
+              size="sm"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1002,7 +1361,16 @@ export default function TestDataEntryPage() {
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-900">Creep Test (Max Load)</h3>
-                <StatusBadge status={creepCalculations.creepPass ? 'PASS' : 'FAIL'} size="xs" />
+                <StatusBadge
+                  status={
+                    creepCalculations.creepPass === true
+                      ? 'PASS'
+                      : creepCalculations.creepPass === false
+                      ? 'FAIL'
+                      : 'PENDING'
+                  }
+                  size="xs"
+                />
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1012,21 +1380,28 @@ export default function TestDataEntryPage() {
                     <input
                       type="number"
                       step="any"
+                      disabled={isReadOnly}
                       value={item.reading}
+                      placeholder={isReadOnly ? '-' : '0.00'}
                       onChange={(e) => {
+                        if (isReadOnly) return;
                         const val = e.target.value;
                         setCreepPoints((prev) =>
                           prev.map((p, i) => (i === idx ? { ...p, reading: val } : p))
                         );
                       }}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded font-mono font-bold"
+                      className={`w-full px-2 py-1 text-xs border rounded font-mono font-bold ${
+                        isReadOnly
+                          ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                          : 'bg-white border-slate-300'
+                      }`}
                     />
                   </div>
                 ))}
               </div>
 
               <div className="text-xs pt-2 border-t border-slate-200 text-slate-600">
-                Δ(15m to 30m): <strong className="font-mono">{creepCalculations.creepDelta}</strong> | Tolerance Limit: ≤ {creepCalculations.creepLimit} {instrument.unit} (0.2|MPE|)
+                Δ(15m to 30m): <strong className="font-mono">{creepCalculations.creepDelta === null ? '-' : `${creepCalculations.creepDelta} ${instrument.unit}`}</strong> | Tolerance Limit: ≤ {creepCalculations.creepLimit} {instrument.unit} (0.2|MPE|)
               </div>
             </div>
 
@@ -1035,7 +1410,16 @@ export default function TestDataEntryPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-slate-900">Zero Return Error</h3>
-                  <StatusBadge status={creepCalculations.zeroPass ? 'PASS' : 'FAIL'} size="xs" />
+                  <StatusBadge
+                    status={
+                      creepCalculations.zeroPass === true
+                        ? 'PASS'
+                        : creepCalculations.zeroPass === false
+                        ? 'FAIL'
+                        : 'PENDING'
+                    }
+                    size="xs"
+                  />
                 </div>
                 <p className="text-xs text-slate-500 mb-3">
                   Reading observed immediately after full load removal.
@@ -1047,14 +1431,23 @@ export default function TestDataEntryPage() {
                 <input
                   type="number"
                   step="any"
+                  disabled={isReadOnly}
                   value={zeroReturnReading}
-                  onChange={(e) => setZeroReturnReading(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded font-mono font-bold"
+                  placeholder={isReadOnly ? '-' : '0.00'}
+                  onChange={(e) => {
+                    if (isReadOnly) return;
+                    setZeroReturnReading(e.target.value);
+                  }}
+                  className={`w-full px-3 py-2 text-xs border rounded font-mono font-bold ${
+                    isReadOnly
+                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                      : 'bg-white border-slate-300'
+                  }`}
                 />
               </div>
 
               <div className="text-xs pt-2 border-t border-slate-200 text-slate-600">
-                Zero Error: <strong className="font-mono">{creepCalculations.zeroReturnErr}</strong> | Limit: ≤ {creepCalculations.zeroLimit} {instrument.unit} (0.5e)
+                Zero Error: <strong className="font-mono">{creepCalculations.zeroReturnErr === null ? '-' : `${creepCalculations.zeroReturnErr} ${instrument.unit}`}</strong> | Limit: ≤ {creepCalculations.zeroLimit} {instrument.unit} (0.5e)
               </div>
             </div>
           </div>
@@ -1068,27 +1461,43 @@ export default function TestDataEntryPage() {
           <span>Real-time mathematical validation active per OIML R-76 rules.</span>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate({ isComplete: false })}
-            disabled={saveMutation.isPending}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
-          >
-            <FiSave className="w-3.5 h-3.5" />
-            <span>{t('common.save', 'Save Progress')}</span>
-          </button>
+        {isReadOnly ? (
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded-md">
+              <FiLock className="w-3.5 h-3.5" />
+              Session Finalized & Sealed
+            </span>
+            <button
+              type="button"
+              onClick={() => navigate(`/reports/${sessionId}`)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors shadow-sm"
+            >
+              <span>View Certificate & Report &rarr;</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate({ isComplete: false })}
+              disabled={saveMutation.isPending}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+            >
+              <FiSave className="w-3.5 h-3.5" />
+              <span>{t('common.save', 'Save Progress')}</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate({ isComplete: true })}
-            disabled={saveMutation.isPending}
-            className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors shadow-sm disabled:opacity-50"
-          >
-            <FiCheckCircle className="w-3.5 h-3.5" />
-            <span>{t('common.saveAndComplete', 'Save & Complete Module')}</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate({ isComplete: true })}
+              disabled={saveMutation.isPending}
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors shadow-sm disabled:opacity-50"
+            >
+              <FiCheckCircle className="w-3.5 h-3.5" />
+              <span>{t('common.saveAndComplete', 'Save & Complete Module')}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Batch CSV Import Modal */}

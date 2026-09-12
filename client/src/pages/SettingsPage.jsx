@@ -1,24 +1,37 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { FiSave, FiSettings, FiCheckCircle, FiInfo } from 'react-icons/fi';
+import { FiSave, FiSettings, FiCheckCircle, FiInfo, FiRefreshCw } from 'react-icons/fi';
 
 import PageHeader from '../components/shared/PageHeader';
 
+const SETTINGS_STORAGE_KEY = 'nawi_settings';
+
+const DEFAULT_SETTINGS = {
+  ministryName: 'Ministry of Consumer Affairs, Food & Public Distribution',
+  departmentName: 'Department of Legal Metrology',
+  standardReference: 'Legal Metrology (General) Rules, 2011 / OIML R-76:2006',
+  defaultTempMin: 10,
+  defaultTempMax: 40,
+  defaultHumidityMin: 40,
+  defaultHumidityMax: 70,
+  enableAuditChainValidation: true,
+  requireInspectorSignature: true,
+};
+
 export default function SettingsPage() {
   const { t } = useTranslation();
-  const [isSaving, setIsSaving] = useState(false);
 
-  const [settings, setSettings] = useState({
-    ministryName: 'Ministry of Consumer Affairs, Food & Public Distribution',
-    departmentName: 'Department of Legal Metrology',
-    standardReference: 'Legal Metrology (General) Rules, 2011 / OIML R-76:2006',
-    defaultTempMin: 10,
-    defaultTempMax: 40,
-    defaultHumidityMin: 40,
-    defaultHumidityMax: 70,
-    enableAuditChainValidation: true,
-    requireInspectorSignature: true,
+  const [settings, setSettings] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (stored) {
+        return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      }
+    } catch (err) {
+      console.warn('Failed to parse nawi_settings from localStorage:', err);
+    }
+    return DEFAULT_SETTINGS;
   });
 
   const handleChange = (e) => {
@@ -31,11 +44,22 @@ export default function SettingsPage() {
 
   const handleSave = (e) => {
     e.preventDefault();
-    setIsSaving(true);
-    setTimeout(() => {
-      setIsSaving(false);
-      toast.success(t('settings.savedSuccess', 'Settings updated successfully'));
-    }, 400);
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      toast.success(t('settings.savedSuccess', 'Settings saved to browser storage successfully'));
+    } catch (err) {
+      toast.error('Failed to save settings to localStorage');
+    }
+  };
+
+  const handleResetDefaults = () => {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
+      setSettings(DEFAULT_SETTINGS);
+      toast.success(t('settings.resetSuccess', 'Settings successfully reset to official defaults'));
+    } catch (err) {
+      toast.error('Failed to reset settings in localStorage');
+    }
   };
 
   return (
@@ -210,15 +234,23 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Submit */}
-        <div className="flex items-center justify-end pt-2">
+        {/* Actions Bar */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={handleResetDefaults}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-xs"
+          >
+            <FiRefreshCw className="w-3.5 h-3.5" />
+            <span>{t('settings.resetDefaults', 'Reset to Defaults')}</span>
+          </button>
+
           <button
             type="submit"
-            disabled={isSaving}
-            className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-primary-600 rounded hover:bg-primary-700 transition-colors shadow-sm"
           >
             <FiSave className="w-3.5 h-3.5" />
-            <span>{isSaving ? 'Saving...' : t('common.save', 'Save Settings')}</span>
+            <span>{t('common.save', 'Save Settings')}</span>
           </button>
         </div>
       </form>

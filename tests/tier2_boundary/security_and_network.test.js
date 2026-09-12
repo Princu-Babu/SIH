@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import app from '../../server/src/index';
+import prisma from '../../server/src/lib/prisma';
 import {
   generateVerificationSeal,
   verifySealSignature,
 } from '../../server/src/services/cryptoSeal';
+import { sanitizeFormulaInjection } from '../../server/src/services/batchImportExport';
 import { SAMPLE_INSTRUMENTS, MOCK_OFFICER } from '../helpers/testUtils';
 
 describe('Tier 2: Boundary & Corner Cases - Cryptographic Integrity & Network Resilience', () => {
@@ -75,5 +80,110 @@ describe('Tier 2: Boundary & Corner Cases - Cryptographic Integrity & Network Re
 
     const isExpired = (currentDate.getTime() - issuedDate.getTime()) > oneYearMs;
     expect(isExpired).toBe(true);
+  });
+
+  it('T2-S6: should block unauthenticated access to batch routes with HTTP 401 (SEC-CRIT-01)', async () => {
+    const resImport = await request(app).post('/api/batch/import-csv');
+    expect(resImport.status).toBe(401);
+    expect(resImport.body.success).toBe(false);
+
+    const resExport = await request(app).get('/api/batch/export-csv/nonexistent-session');
+    expect(resExport.status).toBe(401);
+    expect(resExport.body.success).toBe(false);
+  });
+
+  it('T2-S7: should block unauthenticated access to telemetry control routes with HTTP 401 (SEC-CRIT-02)', async () => {
+    const resZero = await request(app).post('/api/telemetry/zero');
+    expect(resZero.status).toBe(401);
+
+    const resTare = await request(app).post('/api/telemetry/tare');
+    expect(resTare.status).toBe(401);
+
+    const resSet = await request(app).post('/api/telemetry/set-weight');
+    expect(resSet.status).toBe(401);
+  });
+
+  it('T2-S8: should block unauthenticated access to sync batch with HTTP 401 (SEC-CRIT-04)', async () => {
+    const resSync = await request(app)
+      .post('/api/sync/batch')
+      .set('x-unauthenticated', 'true')
+      .send({ idempotencyKey: 'idem-test-key-01', sessions: [{ id: 's1' }] });
+    expect(resSync.status).toBe(401);
+    expect(resSync.body.success).toBe(false);
+  });
+
+  it('T2-S9: should reject unauthorized roles (e.g. VIEWER) from modifying batch or telemetry with HTTP 403', async () => {
+    const viewerToken = jwt.sign(
+      { id: 'usr-viewer-01', role: 'VIEWER', name: 'Auditor Viewer' },
+      process.env.JWT_SECRET || 'test-secret'
+    );
+
+    const resBatch = await request(app)
+      .post('/api/batch/import-csv')
+      .set('Authorization', `Bearer ${viewerToken}`);
+    expect(resBatch.status).toBe(403);
+
+    const resTelemetry = await request(app)
+      .post('/api/telemetry/zero')
+      .set('Authorization', `Bearer ${viewerToken}`);
+    expect(resTelemetry.status).toBe(403);
+  });
+
+  it('T2-S10: should sanitize CSV formula injection triggers (=, +, -, @) according to CWE-1236', () => {
+    expect(sanitizeFormulaInjection('=cmd|/C calc!A0')).toBe("'=cmd|/C calc!A0");
+    expect(sanitizeFormulaInjection('+12345')).toBe("'+12345");
+    expect(sanitizeFormulaInjection('-DDE("cmd";"calc")')).toBe('"\'-DDE(""cmd"";""calc"")"');
+    expect(sanitizeFormulaInjection('@SUM(A1:B2)')).toBe("'@SUM(A1:B2)");
+    expect(sanitizeFormulaInjection('Safe metrology string')).toBe('Safe metrology string');
+    expect(sanitizeFormulaInjection(1234.56)).toBe('1234.56');
+    expect(sanitizeFormulaInjection(null)).toBe('');
+  });
+
+  it('T2-S11: should verify that secret keys cannot be bypassed and tampered signatures are rejected', () => {
+    const genuineSeal = generateVerificationSeal(validData);
+    expect(verifySealSignature(validData, genuineSeal)).toBe(true);
+
+    // Tampered status
+    const tamperedData = { ...validData, status: 'REJECTED' };
+    expect(verifySealSignature(tamperedData, genuineSeal)).toBe(false);
+
+    // Tampered certificate
+    const tamperedCert = { ...validData, certificateNo: 'CERT-FORGED-001' };
+    expect(verifySealSignature(tamperedCert, genuineSeal)).toBe(false);
+  });
+
+  it('T2-S12: should prevent IDOR session tampering: inspector cannot modify or finalize another officer session', async () => {
+    const otherOfficerToken = jwt.sign(
+      { id: 'usr-officer-99', role: 'INSPECTOR', name: 'Inspector Rival' },
+      process.env.JWT_SECRET || 'test-secret'
+    );
+
+    const mockSession = {
+      id: 'session-idor-01',
+      certificateNo: 'NAWI-2026-0001-TEST',
+      conductedById: 'usr-officer-01', // Owned by officer-01
+      status: 'IN_PROGRESS',
+      instrument: wb,
+      testResults: [],
+    };
+
+    const spyFind = vi.spyOn(prisma.testSession, 'findUnique').mockResolvedValue(mockSession);
+
+    // Officer 99 attempts to update Officer 01's session metadata -> 403
+    const resUpdate = await request(app)
+      .put('/api/tests/session-idor-01')
+      .set('Authorization', `Bearer ${otherOfficerToken}`)
+      .send({ remarks: 'Malicious modification' });
+    expect(resUpdate.status).toBe(403);
+    expect(resUpdate.body.message).toContain('Access denied');
+
+    // Officer 99 attempts to finalize Officer 01's session -> 403
+    const resFinalize = await request(app)
+      .post('/api/tests/session-idor-01/finalize')
+      .set('Authorization', `Bearer ${otherOfficerToken}`);
+    expect(resFinalize.status).toBe(403);
+    expect(resFinalize.body.message).toContain('Access denied');
+
+    spyFind.mockRestore();
   });
 });

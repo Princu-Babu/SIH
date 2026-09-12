@@ -98,6 +98,22 @@ exports.importCsv = async (req, res, next) => {
     // 5. Optionally save result to TestSession in database
     const saveToDatabase = req.body.saveToDatabase === true || req.body.saveToDatabase === 'true';
     if (session && saveToDatabase) {
+      // IDOR protection: Non-admin inspectors cannot save results into another officer's session
+      if (req.user && req.user.role !== 'ADMIN' && session.conductedById && session.conductedById !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You do not have permission to modify sessions belonging to other officers.',
+        });
+      }
+
+      // Tamper protection: Completed sessions cannot be modified (FE-CRIT-04)
+      if (session.status === 'COMPLETED' && req.user && req.user.role !== 'ADMIN') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Legally finalized and sealed sessions cannot be modified.',
+        });
+      }
+
       const existingResult = await prisma.testResult.findUnique({
         where: {
           testSessionId_testType: {
@@ -191,6 +207,28 @@ exports.exportCsv = async (req, res, next) => {
         success: false,
         message: 'Session ID is required for CSV export.',
       });
+    }
+
+    // IDOR protection: Non-admin inspectors cannot export sessions belonging to other officers
+    if (req.user && req.user.role !== 'ADMIN') {
+      let session = null;
+      try {
+        if (prisma && prisma.testSession) {
+          session = await prisma.testSession.findUnique({
+            where: { id: sessionId },
+            select: { id: true, conductedById: true },
+          });
+        }
+      } catch (err) {
+        session = null;
+      }
+
+      if (session && session.conductedById && session.conductedById !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You do not have permission to export sessions belonging to other officers.',
+        });
+      }
     }
 
     const { filename, csvContent } = await exportSessionToCsv(sessionId);

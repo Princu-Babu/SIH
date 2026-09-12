@@ -7,11 +7,34 @@ const {
   verifyCertificate,
 } = require('../controllers/reports.controller');
 
+let rateLimit;
+try {
+  rateLimit = require('express-rate-limit');
+} catch (e) {
+  rateLimit = null;
+}
+
+// Rate Limiting for Public QR Verification endpoint (prevent scrape / DoS attacks)
+const verifyLimiter = rateLimit
+  ? rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 120, // max 120 requests per window per IP
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        valid: false,
+        success: false,
+        message: 'Too many verification requests. Please try again after 15 minutes.',
+      },
+      skip: (req) => process.env.NODE_ENV === 'test' && !req.headers['x-test-rate-limit'],
+    })
+  : (req, res, next) => next();
+
 /**
  * Public Verification Route for QR and Market Inspection
  * GET /api/reports/verify/:certificateNo
  */
-router.get('/verify/:certificateNo', verifyCertificate);
+router.get('/verify/:certificateNo', verifyLimiter, verifyCertificate);
 
 /**
  * GET /api/reports/:sessionId/certificate

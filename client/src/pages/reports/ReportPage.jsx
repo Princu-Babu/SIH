@@ -17,6 +17,7 @@ import {
   FiActivity,
 } from 'react-icons/fi';
 
+import QRCode from 'qrcode';
 import apiClient from '../../hooks/useApi';
 import PageHeader from '../../components/shared/PageHeader';
 import StatusBadge from '../../components/shared/StatusBadge';
@@ -24,97 +25,28 @@ import LoadingSpinner from '../../components/shared/LoadingSpinner';
 import ErrorEnvelopeChart from '../../components/charts/ErrorEnvelopeChart';
 
 /**
- * Compact, genuine QR Code matrix generator (Model 2, Byte Mode, ECC Low/Medium)
- * Creates a valid, camera-scannable QR matrix in pure JavaScript without external dependencies.
+ * Genuine ISO/IEC 18004 QR Code matrix generator
+ * Uses authentic Reed-Solomon error correction and module placement to create
+ * a camera-scannable QR matrix with quiet-zone padding for immediate smartphone scanning.
  */
-function generateQrMatrix(text) {
-  // Simple deterministic QR matrix generator for standard URLs
-  // Generates 25x25 (Version 2) QR matrix with finder patterns, timing patterns, and encoded data bits
-  const size = 25;
-  const matrix = Array.from({ length: size }, () => Array(size).fill(0));
+function generateQrMatrix(text, margin = 2) {
+  if (!text) return [];
+  try {
+    const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
+    const size = qr.modules.size;
+    const totalSize = size + margin * 2;
+    const matrix = Array.from({ length: totalSize }, () => Array(totalSize).fill(0));
 
-  // Finder Patterns (7x7 at top-left, top-right, bottom-left)
-  function drawFinderPattern(r0, c0) {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        if (
-          r === 0 ||
-          r === 6 ||
-          c === 0 ||
-          c === 6 ||
-          (r >= 2 && r <= 4 && c >= 2 && c <= 4)
-        ) {
-          matrix[r0 + r][c0 + c] = 1;
-        } else {
-          matrix[r0 + r][c0 + c] = 0;
-        }
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        matrix[r + margin][c + margin] = qr.modules.get(r, c) ? 1 : 0;
       }
     }
+    return matrix;
+  } catch (err) {
+    console.error('Failed to generate genuine QR matrix:', err);
+    return [];
   }
-
-  // Draw 3 Finders
-  drawFinderPattern(0, 0);
-  drawFinderPattern(0, size - 7);
-  drawFinderPattern(size - 7, 0);
-
-  // Timing patterns
-  for (let i = 8; i < size - 8; i++) {
-    matrix[6][i] = i % 2 === 0 ? 1 : 0;
-    matrix[i][6] = i % 2 === 0 ? 1 : 0;
-  }
-
-  // Dark module
-  matrix[size - 8][8] = 1;
-
-  // Hash input string to fill data payload deterministically
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash << 5) - hash + text.charCodeAt(i);
-    hash |= 0;
-  }
-
-  // Seeded pseudo-random bit stream for data area
-  let seed = Math.abs(hash) || 123456789;
-  function nextBit() {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    return (seed >> 16) & 1;
-  }
-
-  // Text character bits
-  let charIdx = 0;
-  let bitIdx = 0;
-
-  for (let c = size - 1; c > 0; c -= 2) {
-    if (c === 6) c--; // Skip timing column
-    for (let count = 0; count < size; count++) {
-      for (let colOffset = 0; colOffset < 2; colOffset++) {
-        const col = c - colOffset;
-        const row = (c & 2) === 0 ? size - 1 - count : count;
-
-        // Skip finder zones
-        const inTopLeft = row < 9 && col < 9;
-        const inTopRight = row < 9 && col >= size - 8;
-        const inBottomLeft = row >= size - 8 && col < 9;
-        const inTiming = row === 6 || col === 6;
-
-        if (!inTopLeft && !inTopRight && !inBottomLeft && !inTiming) {
-          if (charIdx < text.length) {
-            const charCode = text.charCodeAt(charIdx);
-            matrix[row][col] = (charCode >> (7 - bitIdx)) & 1;
-            bitIdx++;
-            if (bitIdx >= 8) {
-              bitIdx = 0;
-              charIdx++;
-            }
-          } else {
-            matrix[row][col] = nextBit();
-          }
-        }
-      }
-    }
-  }
-
-  return matrix;
 }
 
 export default function ReportPage() {

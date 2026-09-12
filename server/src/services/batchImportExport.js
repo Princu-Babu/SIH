@@ -12,6 +12,31 @@ const { getMPE, calculateIndicationAndError, calculateWeighingPerformance } = re
 const DEFAULT_WEIGHBRIDGE_POINTS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 100];
 
 /**
+ * Sanitize cell values against CSV/Spreadsheet Formula Injection (CWE-1236)
+ * Prefixes string values starting with '=', '+', '-', '@' with a single quote (')
+ * and handles proper CSV escaping.
+ *
+ * @param {any} value - Cell value to sanitize
+ * @returns {string} Sanitized string safe for spreadsheet opening
+ */
+function sanitizeFormulaInjection(value) {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (str.length === 0) return '';
+
+  const formulaTriggers = ['=', '+', '-', '@'];
+  let sanitized = str;
+  if (formulaTriggers.includes(str.charAt(0))) {
+    sanitized = `'${str}`;
+  }
+
+  if (sanitized.includes(',') || sanitized.includes('"') || sanitized.includes('\n') || sanitized.includes('\r')) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  }
+  return sanitized;
+}
+
+/**
  * Parse CSV raw text into structured array of rows
  * Handles comma, semicolon, tab delimiters, quoted strings, and carriage returns
  */
@@ -402,30 +427,30 @@ async function exportSessionToCsv(sessionIdOrSession) {
   lines.push('================================================================================');
   lines.push('NATIONAL LEGAL METROLOGY — NAWI-ReportPro OIML R-76 TEST REPORT (CSV EXPORT)');
   lines.push('================================================================================');
-  lines.push(`Certificate Number,${session.certificateNo}`);
-  lines.push(`Overall Status,${session.status}`);
-  lines.push(`Overall Result,${session.overallResult || 'PENDING'}`);
+  lines.push(`Certificate Number,${sanitizeFormulaInjection(session.certificateNo)}`);
+  lines.push(`Overall Status,${sanitizeFormulaInjection(session.status)}`);
+  lines.push(`Overall Result,${sanitizeFormulaInjection(session.overallResult || 'PENDING')}`);
   lines.push(`Inspection Date,${session.startedAt ? new Date(session.startedAt).toISOString().split('T')[0] : 'N/A'}`);
-  lines.push(`Verification Officer,${session.conductedBy?.name || 'N/A'} (${session.conductedBy?.email || ''})`);
+  lines.push(`Verification Officer,${sanitizeFormulaInjection(session.conductedBy?.name || 'N/A')} (${sanitizeFormulaInjection(session.conductedBy?.email || '')})`);
   lines.push(`Ambient Temperature (°C),${session.temperature !== null ? session.temperature : 'N/A'}`);
   lines.push(`Ambient Humidity (%RH),${session.humidity !== null ? session.humidity : 'N/A'}`);
-  lines.push(`Remarks,"${(session.remarks || '').replace(/"/g, '""')}"`);
+  lines.push(`Remarks,${sanitizeFormulaInjection(session.remarks || '')}`);
   lines.push('');
 
   // 2. Instrument Specifications
   lines.push('--------------------------------------------------------------------------------');
   lines.push('INSTRUMENT SPECIFICATIONS');
   lines.push('--------------------------------------------------------------------------------');
-  lines.push(`Instrument Name,${inst.name}`);
-  lines.push(`Manufacturer,${inst.manufacturer}`);
-  lines.push(`Model,${inst.model}`);
-  lines.push(`Serial Number,${inst.serialNumber}`);
-  lines.push(`Accuracy Class,${inst.accuracyClass}`);
-  lines.push(`Max Capacity,${inst.maxCapacity} ${inst.unit}`);
-  lines.push(`Min Capacity,${inst.minCapacity} ${inst.unit}`);
-  lines.push(`Verification Interval (e),${inst.verificationInterval} ${inst.unit}`);
-  lines.push(`Actual Interval (d),${inst.actualInterval} ${inst.unit}`);
-  lines.push(`Location,"${(inst.location || '').replace(/"/g, '""')}"`);
+  lines.push(`Instrument Name,${sanitizeFormulaInjection(inst.name)}`);
+  lines.push(`Manufacturer,${sanitizeFormulaInjection(inst.manufacturer)}`);
+  lines.push(`Model,${sanitizeFormulaInjection(inst.model)}`);
+  lines.push(`Serial Number,${sanitizeFormulaInjection(inst.serialNumber)}`);
+  lines.push(`Accuracy Class,${sanitizeFormulaInjection(inst.accuracyClass)}`);
+  lines.push(`Max Capacity,${inst.maxCapacity} ${sanitizeFormulaInjection(inst.unit)}`);
+  lines.push(`Min Capacity,${inst.minCapacity} ${sanitizeFormulaInjection(inst.unit)}`);
+  lines.push(`Verification Interval (e),${inst.verificationInterval} ${sanitizeFormulaInjection(inst.unit)}`);
+  lines.push(`Actual Interval (d),${inst.actualInterval} ${sanitizeFormulaInjection(inst.unit)}`);
+  lines.push(`Location,${sanitizeFormulaInjection(inst.location || '')}`);
   lines.push('');
 
   // 3. Test Results Modules
@@ -496,4 +521,5 @@ module.exports = {
   processWeighbridgeCalibrationCsv,
   generateSampleCsvTemplate,
   exportSessionToCsv,
+  sanitizeFormulaInjection,
 };

@@ -1,4 +1,26 @@
 require('dotenv').config();
+
+// Enforce mandatory cryptographic secrets on startup (SEC-CRIT-03)
+if (!process.env.JWT_SECRET) {
+  const errMsg = 'FATAL: JWT_SECRET environment variable is required for server startup. Please configure JWT_SECRET in your .env file.';
+  console.error(errMsg);
+  if (require.main === module) {
+    process.exit(1);
+  } else {
+    throw new Error(errMsg);
+  }
+}
+
+if (!process.env.HMAC_SECRET) {
+  const errMsg = 'FATAL: HMAC_SECRET environment variable is required for digital verification seal engine. Please configure HMAC_SECRET in your .env file.';
+  console.error(errMsg);
+  if (require.main === module) {
+    process.exit(1);
+  } else {
+    throw new Error(errMsg);
+  }
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

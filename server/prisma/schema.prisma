@@ -87,12 +87,14 @@ model TestSession {
   overallResult String?      // PASS or FAIL
   temperature   Float?       // ambient temperature during test
   humidity      Float?       // ambient humidity
-  remarks       String?
-  startedAt     DateTime     @default(now())
-  completedAt   DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  testResults   TestResult[]
+  remarks          String?
+  verificationSeal String?
+  sealedAt         DateTime?
+  startedAt        DateTime     @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  testResults      TestResult[]
 }
 
 model TestResult {

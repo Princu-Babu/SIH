@@ -24,6 +24,7 @@ export default function NewTestSessionPage() {
   );
   const [remarks, setRemarks] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   // Fetch available instruments
   const { data: instruments, isLoading: isInstLoading } = useQuery({
@@ -104,6 +105,7 @@ export default function NewTestSessionPage() {
 
     try {
       setIsSubmitting(true);
+      setErrorMessage(null);
       const payload = {
         instrumentId: selectedInstrumentId,
         ambientTemp: Number(ambientTemp),
@@ -117,10 +119,12 @@ export default function NewTestSessionPage() {
       toast.success('Test session initialized successfully.');
       navigate(`/tests/${res.data.id || res.data.session?.id}`);
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Error creating test session';
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Unable to initialize test session. Please ensure the selected instrument exists in the active registry and try again.';
+      setErrorMessage(msg);
       toast.error(msg);
-      // Fallback navigate to simulated test session
-      navigate('/tests/demo-session-1');
     } finally {
       setIsSubmitting(false);
     }
@@ -140,6 +144,16 @@ export default function NewTestSessionPage() {
         title={t('tests.newSessionTitle', 'Create New Test Session')}
         subtitle="Initialize verification session per OIML R-76 standard procedures"
       />
+
+      {errorMessage && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3 shadow-sm">
+          <FiAlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="text-xs text-red-800 space-y-0.5">
+            <span className="font-bold block">Test Session Creation Failed</span>
+            <span>{errorMessage}</span>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* 1. Instrument Selection */}

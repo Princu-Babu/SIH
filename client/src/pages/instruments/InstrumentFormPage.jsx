@@ -61,8 +61,8 @@ export default function InstrumentFormPage() {
             verificationType: inst.verificationType || 'INITIAL',
             tareType: inst.tareType || 'SUBTRACTIVE',
             maxTare: inst.maxTare ?? '',
-            tempRangeMin: inst.tempRangeMin ?? 10,
-            tempRangeMax: inst.tempRangeMax ?? 40,
+            tempRangeMin: inst.tempRangeMin ?? inst.tempMin ?? 10,
+            tempRangeMax: inst.tempRangeMax ?? inst.tempMax ?? 40,
           });
         } catch (err) {
           toast.error('Failed to load instrument details.');
@@ -128,6 +128,13 @@ export default function InstrumentFormPage() {
         actualInterval: Number(formData.actualScaleInterval_d),
         unit: formData.unit,
         location: formData.location,
+        verificationType: formData.verificationType || 'INITIAL',
+        tareType: formData.tareType || 'SUBTRACTIVE',
+        maxTare: formData.maxTare !== '' && formData.maxTare !== null ? Number(formData.maxTare) : null,
+        tempRangeMin: Number(formData.tempRangeMin) || 10,
+        tempRangeMax: Number(formData.tempRangeMax) || 40,
+        tempMin: Number(formData.tempRangeMin) || 10,
+        tempMax: Number(formData.tempRangeMax) || 40,
       };
 
       if (isEdit) {
@@ -471,6 +478,82 @@ export default function InstrumentFormPage() {
                   {errors.actualScaleInterval_d}
                 </p>
               )}
+            </div>
+
+            <div>
+              <label
+                htmlFor="tareType"
+                className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1"
+              >
+                Tare Mechanism *
+              </label>
+              <select
+                id="tareType"
+                name="tareType"
+                value={formData.tareType}
+                onChange={handleChange}
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+              >
+                <option value="SUBTRACTIVE">Subtractive Tare (Max - T)</option>
+                <option value="ADDITIVE">Additive Tare (Max + T)</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="maxTare"
+                className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1"
+              >
+                Max Tare Capacity (T_max)
+              </label>
+              <input
+                id="maxTare"
+                name="maxTare"
+                type="number"
+                step="any"
+                value={formData.maxTare}
+                onChange={handleChange}
+                placeholder={`e.g. 50 (${formData.unit})`}
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="tempRangeMin"
+                className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1"
+              >
+                Min Temperature (°C)
+              </label>
+              <input
+                id="tempRangeMin"
+                name="tempRangeMin"
+                type="number"
+                step="1"
+                value={formData.tempRangeMin}
+                onChange={handleChange}
+                placeholder="e.g. 10"
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="tempRangeMax"
+                className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1"
+              >
+                Max Temperature (°C)
+              </label>
+              <input
+                id="tempRangeMax"
+                name="tempRangeMax"
+                type="number"
+                step="1"
+                value={formData.tempRangeMax}
+                onChange={handleChange}
+                placeholder="e.g. 40"
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
             </div>
           </div>
         </div>

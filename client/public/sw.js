@@ -14,8 +14,6 @@ const PRECACHE_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/src/main.jsx',
-  '/src/index.css',
 ];
 
 /**

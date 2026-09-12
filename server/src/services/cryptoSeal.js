@@ -1,12 +1,11 @@
-/**
- * Cryptographic HMAC-SHA256 Digital Verification Seal Engine
- * Conforming to OIML R-76 & Legal Metrology Act, 2009 for Tamper-Evident Certificates
- */
-
+require('dotenv').config();
 const crypto = require('crypto');
 const { getMPE, calculateIndicationAndError, calculateMultiIntervalMPE } = require('./mpeCalculator');
 
-const DEFAULT_SECRET = process.env.HMAC_SECRET || 'nawi-reportpro-national-legal-metrology-secret-key-2026';
+const DEFAULT_SECRET = process.env.HMAC_SECRET;
+if (!DEFAULT_SECRET) {
+  throw new Error('FATAL: HMAC_SECRET environment variable is missing. Cryptographic seal engine requires a configured HMAC_SECRET.');
+}
 
 /**
  * Normalize and canonicalize session verification fields into deterministic string

@@ -31,7 +31,6 @@ import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import EmptyState from '../components/shared/EmptyState';
-import Breadcrumb from '../components/layout/Breadcrumb';
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -69,29 +68,36 @@ export default function DashboardPage() {
     },
   });
 
-  // Monthly verification chart data
-  const monthlyData = [
-    { month: 'Mar', passed: 18, failed: 1 },
-    { month: 'Apr', passed: 24, failed: 2 },
-    { month: 'May', passed: 30, failed: 3 },
-    { month: 'Jun', passed: 28, failed: 1 },
-    { month: 'Jul', passed: 35, failed: 2 },
-    { month: 'Aug', passed: 42, failed: 3 },
-  ];
+  // Monthly verification chart data — derived from actual recent sessions
+  const monthlyData = useMemo(() => {
+    if (!recentSessions || recentSessions.length === 0) return [];
+    const monthMap = {};
+    recentSessions.forEach((s) => {
+      const d = new Date(s.testDate);
+      if (isNaN(d)) return;
+      const key = d.toLocaleString('en', { month: 'short' });
+      if (!monthMap[key]) monthMap[key] = { month: key, passed: 0, failed: 0 };
+      if (s.overallVerdict === 'PASS' || s.overallVerdict === 'COMPLETED') monthMap[key].passed++;
+      else if (s.overallVerdict === 'FAIL') monthMap[key].failed++;
+      else monthMap[key].passed++; // default pending to passed for display
+    });
+    return Object.values(monthMap);
+  }, [recentSessions]);
 
-  // Test distribution pie chart data
-  const testDistributionData = [
-    { name: 'Weighing Perf.', value: 45, color: '#2563eb' },
-    { name: 'Repeatability', value: 38, color: '#1d4ed8' },
-    { name: 'Eccentricity', value: 34, color: '#FF9933' },
-    { name: 'Temperature', value: 20, color: '#138808' },
-    { name: 'Stability', value: 22, color: '#60a5fa' },
-    { name: 'Time Dependence', value: 18, color: '#f59e0b' },
-  ];
+  // Test distribution — derived from actual session count by status
+  const testDistributionData = useMemo(() => {
+    if (!statsData) return [];
+    const colors = ['#2563eb', '#1d4ed8', '#FF9933', '#138808'];
+    return [
+      { name: 'Completed', value: statsData.completedTests || 0, color: colors[0] },
+      { name: 'In Progress', value: statsData.pendingTests || 0, color: colors[1] },
+      { name: 'Failed', value: statsData.failedTests || 0, color: colors[2] },
+      { name: 'Registered Instruments', value: statsData.totalInstruments || 0, color: colors[3] },
+    ].filter((d) => d.value > 0);
+  }, [statsData]);
 
   return (
     <div className="space-y-6 overflow-x-hidden">
-      <Breadcrumb />
       <PageHeader
         title={t('dashboard.title', 'Executive Dashboard')}
         subtitle={t('dashboard.subtitle', 'Overview of metrological testing operations and compliance metrics')}

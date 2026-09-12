@@ -3,6 +3,10 @@
  * Populates realistic OIML R-76 metrological test sessions, instruments, users, and audit logs.
  */
 
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
@@ -510,12 +514,14 @@ async function main() {
 
   // Create users
   console.log('Creating official user accounts...');
-  const hashedPassword = await bcrypt.hash('password123', 10);
+  const adminPassword = bcrypt.hashSync('Admin@123', 10);
+  const inspectorPassword = bcrypt.hashSync('Inspector@123', 10);
+  const viewerPassword = bcrypt.hashSync('Viewer@123', 10);
 
   const admin = await prisma.user.create({
     data: {
       email: 'admin@nawi.gov.in',
-      password: hashedPassword,
+      password: adminPassword,
       name: 'Dr. Rajesh Kumar',
       role: 'ADMIN',
     },
@@ -524,7 +530,7 @@ async function main() {
   const inspector1 = await prisma.user.create({
     data: {
       email: 'inspector@nawi.gov.in',
-      password: hashedPassword,
+      password: inspectorPassword,
       name: 'Priya Sharma',
       role: 'INSPECTOR',
     },
@@ -533,7 +539,7 @@ async function main() {
   const inspector2 = await prisma.user.create({
     data: {
       email: 'officer@nawi.gov.in',
-      password: hashedPassword,
+      password: inspectorPassword,
       name: 'Amit Patel',
       role: 'INSPECTOR',
     },
@@ -542,7 +548,7 @@ async function main() {
   const viewer = await prisma.user.create({
     data: {
       email: 'viewer@nawi.gov.in',
-      password: hashedPassword,
+      password: viewerPassword,
       name: 'Sunita Verma',
       role: 'VIEWER',
     },
@@ -740,10 +746,10 @@ async function main() {
   console.log(' Seed data loaded successfully!');
   console.log('=============================================');
   console.log('Default Login Credentials:');
-  console.log('  Admin:     admin@nawi.gov.in     / password123');
-  console.log('  Inspector: inspector@nawi.gov.in  / password123');
-  console.log('  Officer:   officer@nawi.gov.in    / password123');
-  console.log('  Viewer:    viewer@nawi.gov.in     / password123');
+  console.log('  Admin:     admin@nawi.gov.in     / Admin@123');
+  console.log('  Inspector: inspector@nawi.gov.in  / Inspector@123');
+  console.log('  Officer:   officer@nawi.gov.in    / Inspector@123');
+  console.log('  Viewer:    viewer@nawi.gov.in     / Viewer@123');
   console.log('=============================================\n');
 }
 

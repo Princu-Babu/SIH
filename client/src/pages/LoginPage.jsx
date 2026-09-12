@@ -183,21 +183,21 @@ export default function LoginPage() {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setCredentials('admin@nawi.gov.in', 'password123')}
+                onClick={() => setCredentials('admin@nawi.gov.in', 'Admin@123')}
                 className="px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-center truncate"
               >
                 Admin
               </button>
               <button
                 type="button"
-                onClick={() => setCredentials('inspector@nawi.gov.in', 'password123')}
+                onClick={() => setCredentials('inspector@nawi.gov.in', 'Inspector@123')}
                 className="px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-center truncate"
               >
                 Inspector
               </button>
               <button
                 type="button"
-                onClick={() => setCredentials('viewer@nawi.gov.in', 'password123')}
+                onClick={() => setCredentials('viewer@nawi.gov.in', 'Viewer@123')}
                 className="px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-center truncate"
               >
                 Auditor

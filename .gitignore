@@ -27,3 +27,11 @@ Thumbs.db
 
 # Duplicate extraction
 SIH-main/
+
+# Agent & temporary directories
+.agents/
+coverage/
+archive/
+slide_images/
+
+

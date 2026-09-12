@@ -37,6 +37,7 @@ export default function ErrorEnvelopeChart({
   className = '',
 }) {
   const svgRef = useRef(null);
+  const containerRef = useRef(null);
 
   const [isInService, setIsInService] = useState(initialIsInService);
   const [showHysteresis, setShowHysteresis] = useState(initialShowHysteresis);
@@ -483,7 +484,10 @@ export default function ErrorEnvelopeChart({
       </div>
 
       {/* SVG Chart Canvas */}
-      <div className="relative w-full overflow-hidden bg-slate-50/50 rounded border border-slate-100 p-2">
+      <div
+        ref={containerRef}
+        className="relative w-full overflow-hidden bg-slate-50/50 rounded border border-slate-100 p-2"
+      >
         <svg
           ref={svgRef}
           viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
@@ -658,10 +662,31 @@ export default function ErrorEnvelopeChart({
                 key={`pt-${pt.id}`}
                 className="cursor-pointer"
                 onMouseEnter={(e) => {
-                  if (interactive) {
+                  if (interactive && containerRef.current) {
                     setHoveredPoint(pt);
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setTooltipPos({ x: rect.left, y: rect.top });
+                    const containerRect = containerRef.current.getBoundingClientRect();
+                    const targetRect = e.currentTarget.getBoundingClientRect();
+                    const pointX = targetRect.left + targetRect.width / 2 - containerRect.left;
+                    const pointY = targetRect.top + targetRect.height / 2 - containerRect.top;
+
+                    const tipWidth = 220;
+                    const tipHeight = 150;
+
+                    // Clamped within container boundaries
+                    let left = pointX - tipWidth / 2;
+                    if (left < 10) {
+                      left = 10;
+                    } else if (left + tipWidth > containerRect.width - 10) {
+                      left = Math.max(10, containerRect.width - tipWidth - 10);
+                    }
+
+                    // Vertically position: prefer above, flip below if close to top edge
+                    let top = pointY - tipHeight - 12;
+                    if (top < 10) {
+                      top = pointY + 16;
+                    }
+
+                    setTooltipPos({ x: left, y: top });
                   }
                 }}
                 onMouseLeave={() => {
@@ -750,8 +775,8 @@ export default function ErrorEnvelopeChart({
           <div
             className="absolute z-20 bg-slate-900/95 backdrop-blur text-white text-xs rounded-lg p-3 shadow-xl border border-slate-700 pointer-events-none transition-opacity duration-150 min-w-[210px]"
             style={{
-              left: `${Math.min(getX(hoveredPoint.load) - 20, plotWidth - 140)}px`,
-              top: `${Math.max(getY(hoveredPoint.error) - 130, 20)}px`,
+              left: `${tooltipPos.x}px`,
+              top: `${tooltipPos.y}px`,
             }}
           >
             <div className="flex items-center justify-between gap-2 border-b border-slate-700 pb-1.5 mb-1.5">

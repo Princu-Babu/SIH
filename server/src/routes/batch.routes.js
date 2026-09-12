@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const batchController = require('../controllers/batch.controller');
+const { verifyToken, requireRole } = require('../middleware/auth');
 
 /**
  * Batch CSV / Excel Import & Export Routes
+ * Protected with authenticateToken (verifyToken) and requireRole('ADMIN', 'INSPECTOR')
  */
+router.use(verifyToken, requireRole('ADMIN', 'INSPECTOR'));
 
 // Import 10-point weighbridge calibration CSV
 router.post('/import-csv', batchController.uploadMiddleware, batchController.importCsv);

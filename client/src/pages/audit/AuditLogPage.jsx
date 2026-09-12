@@ -22,7 +22,7 @@ export default function AuditLogPage() {
         timestamp: log.createdAt || log.timestamp,
         userName: log.user?.name || log.userName || 'System / Officer',
         userRole: log.user?.role || log.userRole || 'SYSTEM',
-        hash: log.hash || `SHA256-${log.id?.substring(0, 16) || 'SECURED'}`,
+        hash: log.hash || log.id?.substring(0, 16) || '—',
       }));
     },
   });
@@ -94,7 +94,7 @@ export default function AuditLogPage() {
       cellClass: 'text-xs text-slate-500 font-mono',
     },
     {
-      header: 'Block Hash',
+      header: 'Record ID',
       accessor: 'hash',
       render: (row) => (
         <span
@@ -119,7 +119,7 @@ export default function AuditLogPage() {
         <FiLock className="w-5 h-5 text-primary-700 shrink-0" />
         <div>
           <span className="font-bold">Cryptographically Protected Record: </span>
-          {t('audit.tamperProof', 'All audit entries are protected by PostgreSQL immutability rules and SHA-256 block chaining.')}
+          {t('audit.tamperProof', 'All audit entries are protected by PostgreSQL immutability rules and server-side access controls.')}
         </div>
       </div>
 

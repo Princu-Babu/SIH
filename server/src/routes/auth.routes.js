@@ -1,13 +1,39 @@
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+let rateLimit;
+try {
+  rateLimit = require('express-rate-limit');
+} catch (e) {
+  rateLimit = null;
+}
 const prisma = require('../lib/prisma');
 const { verifyToken } = require('../middleware/auth');
 const { createAuditLog, getClientIp } = require('../middleware/auditLog');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'nawi_reportpro_super_secure_jwt_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is missing. Authentication routes cannot function securely without a configured JWT_SECRET.');
+}
+
+// Rate Limiting for Authentication Routes (prevent brute-force attacks)
+if (rateLimit) {
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 30, // max 30 requests per window per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      success: false,
+      message: 'Too many authentication requests. Please try again after 15 minutes.',
+    },
+    skip: (req) => process.env.NODE_ENV === 'test',
+  });
+  router.use(authLimiter);
+}
 
 /**
  * POST /api/auth/login

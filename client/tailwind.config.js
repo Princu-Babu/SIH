@@ -6,6 +6,12 @@ export default {
   ],
   theme: {
     extend: {
+      screens: {
+        xs: '475px',
+      },
+      borderWidth: {
+        '3': '3px',
+      },
       colors: {
         primary: {
           50: '#eff6ff',

@@ -19,7 +19,7 @@ import {
   FiCpu,
   FiActivity,
 } from 'react-icons/fi';
-import apiClient from '../../hooks/useApi';
+import { verifyCertificate } from '../../services/publicApi';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
 import ErrorEnvelopeChart from '../../components/charts/ErrorEnvelopeChart';
 
@@ -29,7 +29,7 @@ import ErrorEnvelopeChart from '../../components/charts/ErrorEnvelopeChart';
  * 
  * Unauthenticated public route enabling traders, farmers, consumers, and enforcement officers
  * to instantly inspect authentic calibration certificates, OIML R-76 error envelope curves,
- * and cryptographic HMAC legal verification seals.
+ * and cryptographic HMAC legal verification seals without requiring officer login.
  */
 export default function PublicVerificationPage() {
   const { t } = useTranslation();
@@ -45,8 +45,7 @@ export default function PublicVerificationPage() {
     queryKey: ['public-verify', activeCert],
     queryFn: async () => {
       if (!activeCert) return null;
-      const res = await apiClient.get(`/reports/verify/${encodeURIComponent(activeCert)}`);
-      return res.data;
+      return await verifyCertificate(activeCert);
     },
     enabled: !!activeCert,
     retry: 1,
