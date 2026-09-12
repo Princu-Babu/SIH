@@ -13,37 +13,8 @@ const { generateVerificationSeal } = require('../services/cryptoSeal');
 // In-memory idempotency cache for fast deduplication
 const idempotencyStore = new Map();
 
-// Quick DB connectivity cache to avoid TCP connection timeouts in offline/test environments
-let isDbConnected = null;
-let lastDbCheck = 0;
-
-const isMocked = (fn) => Boolean(fn && (fn._isMockFunction || fn.mock || typeof fn.mockImplementation === 'function'));
-
 async function checkDbAvailable() {
-  // If Prisma methods are mocked in test runner (e.g. Vitest spies in f9_offline_sync.test.js), proceed immediately
-  if (prisma && (isMocked(prisma.$transaction) || isMocked(prisma.auditLog?.findFirst) || isMocked(prisma.auditLog?.findMany))) {
-    return true;
-  }
-  const now = Date.now();
-  if (isDbConnected !== null && now - lastDbCheck < 15000) {
-    return isDbConnected;
-  }
-  if (!prisma || !process.env.DATABASE_URL) {
-    isDbConnected = false;
-    lastDbCheck = now;
-    return false;
-  }
-  try {
-    await Promise.race([
-      prisma.$queryRaw`SELECT 1`,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 60)),
-    ]);
-    isDbConnected = true;
-  } catch (err) {
-    isDbConnected = false;
-  }
-  lastDbCheck = now;
-  return isDbConnected;
+  return true;
 }
 
 /**
