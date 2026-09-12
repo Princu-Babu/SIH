@@ -69,3 +69,23 @@ npm run dev --workspace=server
 # Start client frontend
 npm run dev --workspace=client
 ```
+
+---
+
+## 4. Latest Grand Finale Deep-Dive Audit & Remediation Tickets
+
+> **Added:** 13 September 2026  
+> **Detailed Action Plan:** See [`DEEP_DIVE_AUDIT_REPORT.md`](./DEEP_DIVE_AUDIT_REPORT.md) for full defect analysis, file paths, line numbers, and proposed code fixes.
+
+| Ticket ID | Category | Summary | Priority |
+|---|---|---|:---:|
+| **TASK-UI-01** | TopBar | Fix `notif.titleEn` displaying `undefined` in English + typo `messageMessage` | 🔴 P0 |
+| **TASK-UI-02** | Accessibility | Add `id="main-content"` in `AppLayout.jsx` for GIGW skip-link | 🔴 P0 |
+| **TASK-UI-03** | National Identity | Fix duplicate `emblemShadow` filter ID in `StateEmblem.jsx` | 🟡 P1 |
+| **TASK-UI-04** | Cultural Authenticity | Replace crude radial Ashoka Chakra in `LoginPage.jsx` with BIS standard | 🟡 P1 |
+| **TASK-UI-05** | Credibility / AI Slop | Remove fake visitor counter & unverified NIC hosting claim in `Footer.jsx` | 🟡 P1 |
+| **TASK-UI-06** | Hardware Simulation | Clarify `SerialTelemetryToolbar.jsx` as an interactive test simulator | 🟡 P1 |
+| **TASK-UI-07** | Error Handling | Protect stack traces in `ErrorBoundary.jsx` and avoid hard page refresh | 🟠 P2 |
+| **TASK-BE-01** | Database Integrity | Fix `generateCertificateNumber` monotonic counter reset in `tests.routes.js` | 🔴 P0 |
+| **TASK-BE-02** | Schema | Add `ranges Json?` to `model Instrument` in `schema.prisma` | 🟡 P1 |
+| **TASK-BE-03** | Resilience Visibility | Add header / console warning when `prisma.js` falls back to `mockDb` | 🟠 P2 |
