@@ -339,6 +339,8 @@ function matchesFilter(item, where = {}) {
         if (item[k] >= v.lt) return false;
         continue;
       }
+      if (!matchesFilter(item, v)) return false;
+      continue;
     }
 
     if (item[k] !== v) return false;

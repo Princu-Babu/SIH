@@ -32,7 +32,7 @@ export default function NewTestSessionPage() {
     queryFn: async () => {
       try {
         const res = await apiClient.get('/instruments');
-        return Array.isArray(res.data) ? res.data : res.data.instruments || [];
+        return Array.isArray(res.data) ? res.data : res.data?.data || res.data?.instruments || [];
       } catch {
         return [
           {
@@ -277,7 +277,7 @@ export default function NewTestSessionPage() {
               <input
                 id="atmosphericPressure"
                 type="number"
-                step="0.1"
+                step="any"
                 required
                 value={atmosphericPressure}
                 onChange={(e) => setAtmosphericPressure(e.target.value)}

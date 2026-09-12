@@ -41,11 +41,13 @@ router.get('/verify/:certificateNo', verifyLimiter, verifyCertificate);
  * Generate and return official Verification Certificate PDF (Protected)
  */
 router.get('/:sessionId/certificate', verifyToken, getCertificatePdf);
+router.get('/certificate/:sessionId/pdf', verifyToken, getCertificatePdf);
 
 /**
  * GET /api/reports/:sessionId/datasheet
  * Generate and return detailed Technical Data Sheet PDF (Protected)
  */
 router.get('/:sessionId/datasheet', verifyToken, getDatasheetPdf);
+router.get('/datasheet/:sessionId/pdf', verifyToken, getDatasheetPdf);
 
 module.exports = router;
