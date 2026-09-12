@@ -136,10 +136,10 @@ export default function Footer() {
             <div className="bg-slate-800/80 p-2.5 rounded border border-slate-700/80 space-y-1 text-[10px]">
               <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
                 <FiCheckCircle className="w-3 h-3" />
-                <span>GIGW 3.0 Certified Compliant</span>
+                <span>Designed in compliance with GIGW 3.0 draft specifications</span>
               </div>
               <p className="text-slate-400">
-                Technical Host: National Informatics Centre (NIC) • MeitY
+                Deployment Environment: SIH 2026 Prototype
               </p>
               <p className="text-slate-400">
                 Standards: OIML R-76 (2006/E) & ISO/IEC 17025:2017
@@ -159,24 +159,8 @@ export default function Footer() {
               <div className="flex items-center justify-between text-[11px] mb-1">
                 <span className="text-slate-400 flex items-center gap-1">
                   <FiUsers className="w-3 h-3 text-emerald-400" />
-                  <span>Total Visitors:</span>
+                  <span><span className="text-slate-400 text-xs">Session Active</span></span>
                 </span>
-                <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
-                  Live
-                </span>
-              </div>
-              <div className="flex items-center gap-1 font-mono text-base font-bold text-amber-300 bg-slate-950 px-2.5 py-1 rounded tracking-widest border border-slate-800 justify-center">
-                {String(visitorCount)
-                  .padStart(7, '0')
-                  .split('')
-                  .map((digit, idx) => (
-                    <span
-                      key={idx}
-                      className="px-1 py-0.5 bg-slate-900 border border-slate-700 rounded text-center min-w-[18px]"
-                    >
-                      {digit}
-                    </span>
-                  ))}
               </div>
             </div>
 
@@ -219,7 +203,7 @@ export default function Footer() {
       {/* Statutory Policy Modal */}
       {activeModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4 animate-in fade-in duration-150"
           role="dialog"
           aria-modal="true"
         >
