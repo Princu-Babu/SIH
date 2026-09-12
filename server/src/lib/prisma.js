@@ -45,8 +45,16 @@ const prisma = new Proxy(realPrisma, {
     if (!mockModel) return realModel;
 
     if (!modelProxies[prop]) {
+      // Storage for spy/mock overrides
+      const overrides = {};
+      
       modelProxies[prop] = new Proxy(realModel, {
         get(modelTarget, method) {
+          // If a spy/mock has been set on this property, return it
+          if (method in overrides) {
+            return overrides[method];
+          }
+          
           const originalMethod = modelTarget[method];
           if (typeof originalMethod !== 'function') {
             return mockModel[method] !== undefined ? mockModel[method] : originalMethod;
@@ -84,6 +92,15 @@ const prisma = new Proxy(realPrisma, {
               throw dbErr;
             }
           };
+        },
+        set(modelTarget, method, value) {
+          // Allow vi.spyOn to set properties (spy replacement)
+          overrides[method] = value;
+          return true;
+        },
+        deleteProperty(modelTarget, method) {
+          delete overrides[method];
+          return true;
         },
       });
     }
