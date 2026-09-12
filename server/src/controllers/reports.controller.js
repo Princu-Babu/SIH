@@ -1,41 +1,9 @@
 const crypto = require('crypto');
-const net = require('net');
 const prisma = require('../lib/prisma');
 const { generateCertificatePdf, generateDatasheetPdf } = require('../services/pdfGenerator');
 const { createAuditLog, getClientIp } = require('../middleware/auditLog');
 const { generateVerificationSeal, verifySealSignature, computeErrorCurvePoints } = require('../services/cryptoSeal');
 const { getMPE } = require('../services/mpeCalculator');
-
-let dbAvailable = null;
-let lastDbCheck = 0;
-async function isDatabaseAvailable() {
-  if (dbAvailable !== null && Date.now() - lastDbCheck < 30000) {
-    return dbAvailable;
-  }
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(200);
-    socket.once('connect', () => {
-      socket.destroy();
-      dbAvailable = true;
-      lastDbCheck = Date.now();
-      resolve(true);
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      dbAvailable = false;
-      lastDbCheck = Date.now();
-      resolve(false);
-    });
-    socket.once('error', () => {
-      socket.destroy();
-      dbAvailable = false;
-      lastDbCheck = Date.now();
-      resolve(false);
-    });
-    socket.connect(5432, '127.0.0.1');
-  });
-}
 
 /**
  * GET /api/reports/:sessionId/certificate
@@ -136,21 +104,14 @@ async function verifyCertificate(req, res, next) {
     let session = null;
     try {
       if (prisma && prisma.testSession) {
-        const isMocked =
-          typeof prisma.testSession.findUnique?.mockResolvedValue === 'function' ||
-          typeof prisma.testSession.findUnique?.mockImplementation === 'function' ||
-          prisma.testSession.findUnique?._isMockFunction === true;
-
-        if (isMocked || (await isDatabaseAvailable())) {
-          session = await prisma.testSession.findUnique({
-            where: { certificateNo },
-            include: {
-              instrument: true,
-              conductedBy: { select: { id: true, name: true, email: true, role: true } },
-              testResults: true,
-            },
-          });
-        }
+        session = await prisma.testSession.findUnique({
+          where: { certificateNo },
+          include: {
+            instrument: true,
+            conductedBy: { select: { id: true, name: true, email: true, role: true } },
+            testResults: true,
+          },
+        });
       }
     } catch (dbErr) {
       session = null;
