@@ -134,6 +134,10 @@ router.post(
     body('temperature').optional().isFloat(),
     body('humidity').optional().isFloat(),
     body('remarks').optional().isString(),
+    body('ambientTemp').optional().isFloat(),
+    body('relativeHumidity').optional().isFloat(),
+    body('atmosphericPressure').optional().isFloat(),
+    body('standardWeightsUsed').optional().isString(),
   ],
   async (req, res, next) => {
     try {
@@ -142,7 +146,9 @@ router.post(
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const { instrumentId, temperature, humidity, remarks } = req.body;
+      const { instrumentId, remarks } = req.body;
+      const tempVal = req.body.temperature !== undefined ? req.body.temperature : req.body.ambientTemp;
+      const humidityVal = req.body.humidity !== undefined ? req.body.humidity : req.body.relativeHumidity;
 
       const instrument = await prisma.instrument.findUnique({
         where: { id: instrumentId },
@@ -160,8 +166,8 @@ router.post(
           instrumentId,
           conductedById: req.user.id,
           status: 'IN_PROGRESS',
-          temperature: temperature ? parseFloat(temperature) : null,
-          humidity: humidity ? parseFloat(humidity) : null,
+          temperature: tempVal !== undefined && tempVal !== null ? parseFloat(tempVal) : null,
+          humidity: humidityVal !== undefined && humidityVal !== null ? parseFloat(humidityVal) : null,
           remarks: remarks || null,
           startedAt: new Date(),
         },

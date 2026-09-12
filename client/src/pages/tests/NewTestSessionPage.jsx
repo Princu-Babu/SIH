@@ -117,7 +117,8 @@ export default function NewTestSessionPage() {
 
       const res = await apiClient.post('/tests', payload);
       toast.success('Test session initialized successfully.');
-      navigate(`/tests/${res.data.id || res.data.session?.id}`);
+      const sessionId = res.data.data?.id || res.data.id || res.data.session?.id;
+      navigate(`/tests/${sessionId}`);
     } catch (err) {
       const msg =
         err.response?.data?.message ||
