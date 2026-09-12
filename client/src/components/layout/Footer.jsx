@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   FiExternalLink,
@@ -14,27 +14,7 @@ import StateEmblem from '../common/StateEmblem';
 
 export default function Footer() {
   const { t, i18n } = useTranslation();
-  const [visitorCount, setVisitorCount] = useState(148924);
   const [activeModal, setActiveModal] = useState(null);
-
-  // Dynamic realistic visitor counter with localStorage persistence
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('gigw_portal_visitor_count');
-      const base = stored ? parseInt(stored, 10) : 148924;
-      // Increment once per browser session if not already bumped
-      const sessionBumped = sessionStorage.getItem('gigw_session_counted');
-      let current = base;
-      if (!sessionBumped) {
-        current = base + 1;
-        localStorage.setItem('gigw_portal_visitor_count', String(current));
-        sessionStorage.setItem('gigw_session_counted', 'true');
-      }
-      setVisitorCount(current);
-    } catch {
-      setVisitorCount(148925);
-    }
-  }, []);
 
   const lastUpdated = '12 September 2026';
 

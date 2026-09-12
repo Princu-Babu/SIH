@@ -74,32 +74,12 @@ export default function LoginPage() {
           {/* Header & National Emblem Symbol */}
           <div className="text-center mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-50 border border-primary-200 text-[#1e3a5f] mb-3">
-              <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
-                {/* Outer ring */}
-                <circle cx="50" cy="50" r="44" fill="none" stroke="#1e3a5f" strokeWidth="4"/>
-                {/* Inner ring */}
-                <circle cx="50" cy="50" r="32" fill="none" stroke="#1e3a5f" strokeWidth="2"/>
-                {/* Hub */}
-                <circle cx="50" cy="50" r="6" fill="#1e3a5f"/>
-                {/* 24 spokes */}
-                {[...Array(24)].map((_, i) => {
-                  const angle = (i * 360 / 24) * Math.PI / 180;
-                  return (
-                    <line
-                      key={i}
-                      x1={50 + 6 * Math.cos(angle)}
-                      y1={50 + 6 * Math.sin(angle)}
-                      x2={50 + 32 * Math.cos(angle)}
-                      y2={50 + 32 * Math.sin(angle)}
-                      stroke="#1e3a5f"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  );
-                })}
-                {/* Outer decorative ring */}
-                <circle cx="50" cy="50" r="40" fill="none" stroke="#1e3a5f" strokeWidth="1" strokeDasharray="4 2"/>
-              </svg>
+              <img
+                src="/assets/ashoka-chakra.jpg"
+                alt="Ashoka Chakra"
+                className="w-10 h-10 object-contain"
+                loading="eager"
+              />
             </div>
             <h1 className="text-2xl font-extrabold text-[#1e3a5f] tracking-tight">
               NAWI-ReportPro

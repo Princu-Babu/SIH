@@ -53,7 +53,13 @@
 /* GIGW 3.0 High-Contrast Accessibility Theme                                */
 /* ========================================================================= */
 html.high-contrast {
-  filter: contrast(125%);
+}
+
+html.high-contrast img,
+html.high-contrast svg,
+html.high-contrast canvas,
+html.high-contrast video {
+  filter: none !important;
 }
 
 html.high-contrast body {

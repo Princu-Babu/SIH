@@ -11,6 +11,9 @@ export default function StateEmblem({
   color = '#1e3a5f', // Official Ashoka Navy
   showMotto = true,
 }) {
+  const emblemFilterId = React.useId ? React.useId() : `emblem-${Math.random().toString(36).slice(2, 8)}`;
+  const shadowFilterId = `emblemShadow${emblemFilterId}`;
+
   const sizeMap = {
     xs: { width: 28, height: 36 },
     sm: { width: 36, height: 46 },
@@ -36,12 +39,12 @@ export default function StateEmblem({
         className="overflow-visible select-none"
       >
         <defs>
-          <filter id="emblemShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <filter id={shadowFilterId} x="-10%" y="-10%" width="120%" height="120%">
             <feDropShadow dx="0" dy="1" stdDeviation="0.8" floodColor="#000000" floodOpacity="0.12" />
           </filter>
         </defs>
 
-        <g filter="url(#emblemShadow)">
+        <g filter={`url(#${shadowFilterId})`}>
           {/* ============================================================ */}
           {/* TOP LION CAPITAL - 3 VISIBLE LIONS (Center, Left, Right)     */}
           {/* ============================================================ */}

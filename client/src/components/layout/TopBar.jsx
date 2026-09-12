@@ -163,7 +163,7 @@ export default function TopBar({ onToggleSidebar }) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex flex-col bg-white border-b border-slate-200 shadow-xs">
+    <header className="sticky top-0 z-30 flex flex-col bg-white border-b border-slate-200 shadow-sm">
       {/* ========================================================================= */}
       {/* 1. GIGW 3.0 ACCESSIBILITY & NATIONAL UTILITY TOP STRIP                    */}
       {/* ========================================================================= */}
@@ -196,7 +196,7 @@ export default function TopBar({ onToggleSidebar }) {
               aria-label="Decrease Font Size"
               className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
                 fontSize === 'sm'
-                  ? 'bg-amber-400 text-slate-950 shadow-xs'
+                  ? 'bg-amber-400 text-slate-950 shadow-sm'
                   : 'text-slate-300 hover:text-white hover:bg-slate-700'
               }`}
             >
@@ -209,7 +209,7 @@ export default function TopBar({ onToggleSidebar }) {
               aria-label="Standard Font Size"
               className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
                 fontSize === 'base'
-                  ? 'bg-amber-400 text-slate-950 shadow-xs'
+                  ? 'bg-amber-400 text-slate-950 shadow-sm'
                   : 'text-slate-300 hover:text-white hover:bg-slate-700'
               }`}
             >
@@ -222,7 +222,7 @@ export default function TopBar({ onToggleSidebar }) {
               aria-label="Increase Font Size"
               className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
                 fontSize === 'lg'
-                  ? 'bg-amber-400 text-slate-950 shadow-xs'
+                  ? 'bg-amber-400 text-slate-950 shadow-sm'
                   : 'text-slate-300 hover:text-white hover:bg-slate-700'
               }`}
             >
@@ -292,7 +292,7 @@ export default function TopBar({ onToggleSidebar }) {
               <span className="text-base sm:text-lg font-extrabold text-[#1e3a5f] tracking-tight">
                 NAWI-ReportPro
               </span>
-              <span className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-[#1e3a5f] rounded border border-slate-300">
+              <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-[#1e3a5f] rounded border border-slate-300">
                 OIML R-76
               </span>
             </div>
@@ -338,7 +338,7 @@ export default function TopBar({ onToggleSidebar }) {
                   <FiWifiOff className="w-3.5 h-3.5 text-amber-600" />
                   <span className="hidden sm:inline">Offline Mode</span>
                   {pendingCount > 0 && (
-                    <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold">
+                    <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold">
                       {pendingCount}
                     </span>
                   )}
@@ -347,7 +347,7 @@ export default function TopBar({ onToggleSidebar }) {
                 <>
                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
                   <span className="hidden sm:inline">Sync Queue</span>
-                  <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold">
+                  <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold">
                     {pendingCount}
                   </span>
                 </>
@@ -481,7 +481,7 @@ export default function TopBar({ onToggleSidebar }) {
                       {t('nav.notifications', 'Notifications')}
                     </span>
                     {unreadNotifCount > 0 && (
-                      <span className="px-1.5 py-0.2 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-full border border-amber-200">
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-full border border-amber-200">
                         {unreadNotifCount} New
                       </span>
                     )}
@@ -525,14 +525,14 @@ export default function TopBar({ onToggleSidebar }) {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-1">
                             <span className="font-bold text-slate-900 text-[11px]">
-                              {i18n.language === 'hi' ? notif.titleHi : notif.titleEn}
+                              {i18n.language === 'hi' ? notif.titleHi : notif.title}
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">
                               {notif.time}
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
-                            {i18n.language === 'hi' ? notif.messageHi : notif.messageMessage || notif.message}
+                            {i18n.language === 'hi' ? notif.messageHi : notif.message}
                           </p>
                         </div>
                         {notif.unread && (
@@ -560,7 +560,7 @@ export default function TopBar({ onToggleSidebar }) {
               className="flex items-center gap-2 p-1 text-left rounded-md hover:bg-slate-50 transition-colors"
               aria-label="User menu"
             >
-              <div className="w-8 h-8 rounded bg-[#1e3a5f] text-white font-bold text-xs flex items-center justify-center shadow-xs">
+              <div className="w-8 h-8 rounded bg-[#1e3a5f] text-white font-bold text-xs flex items-center justify-center shadow-sm">
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
               <div className="hidden lg:block text-left">

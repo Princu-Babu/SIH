@@ -18,7 +18,7 @@ export default function AppLayout() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         {/* Main Content Area */}
-        <main id="main-content" className="flex-1 overflow-y-auto flex flex-col justify-between bg-surface-50">
+        <main id="main-content" tabIndex="-1" className="flex-1 overflow-y-auto flex flex-col justify-between bg-surface-50">
           <div className="p-4 sm:p-6 lg:p-8 flex-1">
             <div className="max-w-7xl mx-auto page-enter">
               <Breadcrumb />

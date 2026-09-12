@@ -17,34 +17,23 @@ const ALL_REQUIRED_TEST_TYPES = [
   'TIME_DEPENDENCE',
 ];
 
-let testCertSequence = 0;
-function getNextCertSequence() {
-  testCertSequence += 1;
-  return testCertSequence;
-}
-
 /**
  * Generate unique certificate number: NAWI-YYYY-XXXX-XXXXXX
  * Concurrency-safe atomic sequence + cryptographic random hex entropy (SEC-CRIT / DEFECT 8)
  */
 async function generateCertificateNumber() {
   const currentYear = new Date().getFullYear();
-  const seq = getNextCertSequence();
   let dbCount = 0;
   try {
+    // Always query the database for the actual count — no mock detection
     if (prisma && prisma.testSession) {
-      const isMocked =
-        typeof prisma.testSession.count?.mockResolvedValue === 'function' ||
-        typeof prisma.testSession.count?.mockImplementation === 'function' ||
-        prisma.testSession.count?._isMockFunction === true;
-      if (isMocked) {
-        dbCount = await prisma.testSession.count();
-      }
+      dbCount = await prisma.testSession.count();
     }
   } catch (e) {
-    dbCount = 0;
+    // If DB is unavailable, use timestamp-based fallback for uniqueness
+    dbCount = Date.now() % 100000;
   }
-  const serialPad = String(dbCount + seq).padStart(4, '0');
+  const serialPad = String(dbCount + 1).padStart(4, '0');
   const uniqueEntropy = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `NAWI-${currentYear}-${serialPad}-${uniqueEntropy}`;
 }

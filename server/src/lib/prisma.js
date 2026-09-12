@@ -16,6 +16,7 @@ const prisma = new Proxy(realPrisma, {
     if (prop === '$transaction') {
       return async (fnOrArray) => {
         if (isDbOffline && Date.now() - lastCheckTime < RECHECK_INTERVAL_MS) {
+          console.warn('\n⚠️  DATABASE OFFLINE — Running $transaction on in-memory mock fallback!\n');
           return mockDb.$transaction(fnOrArray);
         }
         try {
@@ -25,6 +26,7 @@ const prisma = new Proxy(realPrisma, {
         } catch (err) {
           isDbOffline = true;
           lastCheckTime = Date.now();
+          console.warn('\n⚠️  DATABASE OFFLINE — Running $transaction on in-memory mock fallback!\n');
           return mockDb.$transaction(fnOrArray);
         }
       };
@@ -51,6 +53,7 @@ const prisma = new Proxy(realPrisma, {
           if (isDbOffline && Date.now() - lastCheckTime < RECHECK_INTERVAL_MS) {
             const fallbackFn = mockModel[method];
             if (typeof fallbackFn === 'function') {
+              console.warn(`⚠️  DATABASE OFFLINE — ${String(prop)}.${String(method)}() served from mock fallback`);
               return fallbackFn.apply(mockModel, args);
             }
           }
@@ -71,6 +74,7 @@ const prisma = new Proxy(realPrisma, {
               lastCheckTime = Date.now();
               const fallbackFn = mockModel[method];
               if (typeof fallbackFn === 'function') {
+                console.warn(`⚠️  DATABASE OFFLINE — ${String(prop)}.${String(method)}() served from mock fallback`);
                 return fallbackFn.apply(mockModel, args);
               }
             }

@@ -69,6 +69,7 @@ model Instrument {
   verificationInterval Float          // e value
   actualInterval       Float          // d value
   unit                 String         @default("kg")
+  ranges             Json?
   location             String
   isActive             Boolean        @default(true)
   createdAt            DateTime       @default(now())
