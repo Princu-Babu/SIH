@@ -1,4 +1,4 @@
-﻿const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs');
 
 // Pre-computed bcrypt hashes
 const adminHash = bcrypt.hashSync('Admin@123', 10);
@@ -267,15 +267,81 @@ function matchesFilter(item, where = {}) {
   if (!where || Object.keys(where).length === 0) return true;
   for (const [k, v] of Object.entries(where)) {
     if (v === undefined) continue;
-    if (k === 'isActive' && item.isActive !== v) return false;
-    if (k === 'status' && item.status !== v) return false;
-    if (k === 'overallResult' && item.overallResult !== v) return false;
-    if (k === 'email' && item.email?.toLowerCase() !== String(v).toLowerCase()) return false;
-    if (k === 'serialNumber' && item.serialNumber !== v) return false;
-    if (k === 'certificateNo' && item.certificateNo !== v) return false;
-    if (k === 'id' && item.id !== v) return false;
-    if (k === 'testSessionId' && item.testSessionId !== v) return false;
-    if (k === 'testType' && item.testType !== v) return false;
+
+    if (k === 'OR' && Array.isArray(v)) {
+      if (!v.some((cond) => matchesFilter(item, cond))) return false;
+      continue;
+    }
+    if (k === 'AND' && Array.isArray(v)) {
+      if (!v.every((cond) => matchesFilter(item, cond))) return false;
+      continue;
+    }
+    if (k === 'NOT') {
+      if (matchesFilter(item, v)) return false;
+      continue;
+    }
+
+    if (k === 'email') {
+      if (item.email?.toLowerCase() !== String(v).toLowerCase()) return false;
+      continue;
+    }
+
+    if (v !== null && typeof v === 'object' && !(v instanceof Date)) {
+      if ('contains' in v) {
+        const itemVal = String(item[k] ?? '');
+        const search = String(v.contains);
+        if (v.mode === 'insensitive') {
+          if (!itemVal.toLowerCase().includes(search.toLowerCase())) return false;
+        } else {
+          if (!itemVal.includes(search)) return false;
+        }
+        continue;
+      }
+      if ('startsWith' in v) {
+        const itemVal = String(item[k] ?? '');
+        if (!itemVal.startsWith(String(v.startsWith))) return false;
+        continue;
+      }
+      if ('endsWith' in v) {
+        const itemVal = String(item[k] ?? '');
+        if (!itemVal.endsWith(String(v.endsWith))) return false;
+        continue;
+      }
+      if ('in' in v && Array.isArray(v.in)) {
+        if (!v.in.includes(item[k])) return false;
+        continue;
+      }
+      if ('notIn' in v && Array.isArray(v.notIn)) {
+        if (v.notIn.includes(item[k])) return false;
+        continue;
+      }
+      if ('not' in v) {
+        if (item[k] === v.not) return false;
+        continue;
+      }
+      if ('equals' in v) {
+        if (item[k] !== v.equals) return false;
+        continue;
+      }
+      if ('gte' in v) {
+        if (item[k] < v.gte) return false;
+        continue;
+      }
+      if ('lte' in v) {
+        if (item[k] > v.lte) return false;
+        continue;
+      }
+      if ('gt' in v) {
+        if (item[k] <= v.gt) return false;
+        continue;
+      }
+      if ('lt' in v) {
+        if (item[k] >= v.lt) return false;
+        continue;
+      }
+    }
+
+    if (item[k] !== v) return false;
   }
   return true;
 }
@@ -337,6 +403,17 @@ function createModelHandler(collection, hydrator) {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+      if (collection === testSessions && data.testResults?.create && Array.isArray(data.testResults.create)) {
+        for (const tr of data.testResults.create) {
+          testResults.push({
+            id: tr.id || `mock-res-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            testSessionId: newItem.id,
+            ...tr,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+      }
       collection.unshift(newItem);
       return hydrator ? hydrator(newItem) : { ...newItem };
     },

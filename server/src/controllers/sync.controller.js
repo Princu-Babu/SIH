@@ -239,6 +239,7 @@ async function syncBatch(req, res, next) {
             savedId = `synced-${localId}`;
           }
         } catch (dbErr) {
+          console.error('DEBUG syncBatch dbErr:', dbErr);
           failedCount++;
           syncResults.push({
             localId,
