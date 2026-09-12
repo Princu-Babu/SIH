@@ -36,7 +36,7 @@ export default class ErrorBoundary extends Component {
   };
 
   handleGoHome = () => {
-    window.location.href = '/';
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
   handleClearAndRelogin = () => {
@@ -47,7 +47,7 @@ export default class ErrorBoundary extends Component {
     } catch (e) {
       console.error('Failed to clear storage:', e);
     }
-    window.location.href = '/login';
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
   toggleDetails = () => {
@@ -182,27 +182,31 @@ export default class ErrorBoundary extends Component {
 
                 {/* Diagnostics Toggle */}
                 <div className="pt-2 border-t border-slate-200">
-                  <button
-                    type="button"
-                    onClick={this.toggleDetails}
-                    className="text-xs text-slate-500 hover:text-slate-800 underline focus:outline-none flex items-center space-x-1"
-                  >
-                    <span>{showDetails ? 'छिपाएं' : 'तकनीकी विवरण देखें'} (Toggle Technical Stack Details)</span>
-                  </button>
+                  {import.meta.env.DEV && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={this.toggleDetails}
+                        className="text-xs text-slate-500 hover:text-slate-800 underline focus:outline-none flex items-center space-x-1"
+                      >
+                        <span>{showDetails ? 'छिपाएं' : 'तकनीकी विवरण देखें'} (Toggle Technical Stack Details)</span>
+                      </button>
 
-                  {showDetails && (
-                    <div className="mt-3 p-3 bg-slate-900 text-emerald-400 rounded text-xs font-mono overflow-auto max-h-60 space-y-2">
-                      <div>
-                        <div className="text-slate-400 font-bold border-b border-slate-700 pb-1 mb-1">Stack Trace:</div>
-                        <pre className="whitespace-pre-wrap">{error?.stack || 'No stack trace available'}</pre>
-                      </div>
-                      {errorInfo?.componentStack && (
-                        <div>
-                          <div className="text-slate-400 font-bold border-b border-slate-700 pb-1 mb-1">Component Stack:</div>
-                          <pre className="whitespace-pre-wrap">{errorInfo.componentStack}</pre>
+                      {showDetails && (
+                        <div className="mt-3 p-3 bg-slate-900 text-emerald-400 rounded text-xs font-mono overflow-auto max-h-60 space-y-2">
+                          <div>
+                            <div className="text-slate-400 font-bold border-b border-slate-700 pb-1 mb-1">Stack Trace:</div>
+                            <pre className="whitespace-pre-wrap">{error?.stack || 'No stack trace available'}</pre>
+                          </div>
+                          {errorInfo?.componentStack && (
+                            <div>
+                              <div className="text-slate-400 font-bold border-b border-slate-700 pb-1 mb-1">Component Stack:</div>
+                              <pre className="whitespace-pre-wrap">{errorInfo.componentStack}</pre>
+                            </div>
+                          )}
                         </div>
                       )}
-                    </div>
+                    </>
                   )}
                 </div>
               </div>

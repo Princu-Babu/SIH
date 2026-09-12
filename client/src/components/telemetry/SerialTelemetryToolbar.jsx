@@ -365,13 +365,19 @@ export default function SerialTelemetryToolbar({
             <FiRadio className={`w-4 h-4 ${isConnected ? 'animate-pulse text-emerald-400' : 'text-slate-400'}`} />
           </div>
           <div>
-            <div className="font-bold text-xs flex items-center gap-2">
-              <span>RS-232 / USB Digital Weighbridge Telemetry</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
-                isConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
-              }`}>
-                {isConnected ? `${connectionMode === 'WEB_SERIAL' ? 'HARDWARE COM PORT' : 'LIVE SIMULATOR'} [ONLINE]` : 'OFFLINE'}
-              </span>
+            <div className="font-bold text-xs flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span>Interactive RS-232 Weighbridge Simulator (Virtual Test Mode)</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  isConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {isConnected ? (connectionMode === 'WEB_SERIAL' ? 'HARDWARE COM PORT [ONLINE]' : 'SIMULATOR MODE [ACTIVE]') : 'OFFLINE'}
+                </span>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[10px] px-2 py-0.5 rounded flex items-center gap-1 w-fit mt-0.5">
+                <span>⚠️</span>
+                <span>Simulated data — not connected to physical hardware</span>
+              </div>
             </div>
           </div>
         </div>
