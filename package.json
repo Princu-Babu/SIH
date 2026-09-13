@@ -8,6 +8,7 @@
   "scripts": {
     "setup": "npm install && cd server && npx prisma migrate dev --name init && npx prisma db seed && cd ..",
     "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "demo": "concurrently \"npm run demo --workspace=server\" \"npm run dev --workspace=client\"",
     "build": "npm run build --workspace=client",
     "start": "concurrently \"npm start --workspace=server\" \"npm run preview --workspace=client\"",
     "test": "vitest run",

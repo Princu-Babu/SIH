@@ -1,5 +1,10 @@
 const bcrypt = require('bcryptjs');
 
+// Ensure HMAC_SECRET is populated before we compute demo seals, even if this
+// module is imported ahead of the server bootstrap.
+require('./bootstrapEnv').bootstrapEnv({ silent: true });
+const { generateVerificationSeal } = require('../services/cryptoSeal');
+
 // Pre-computed bcrypt hashes
 const adminHash = bcrypt.hashSync('Admin@123', 10);
 const inspectorHash = bcrypt.hashSync('Inspector@123', 10);
@@ -124,7 +129,7 @@ const testSessions = [
     temperature: 24.5,
     humidity: 55.0,
     remarks: 'Annual statutory reverification completed. All error bounds conform strictly to OIML R-76 Class III tolerances.',
-    verificationSeal: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    verificationSeal: null, // computed at load — see computeAndAssignSeals()
     sealedAt: new Date('2026-03-01T12:00:00Z'),
     startedAt: new Date('2026-03-01T10:00:00Z'),
     completedAt: new Date('2026-03-01T12:00:00Z'),
@@ -141,7 +146,7 @@ const testSessions = [
     temperature: 22.0,
     humidity: 50.0,
     remarks: 'Initial verification before market deployment. Scale approved for commercial transactions.',
-    verificationSeal: 'a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0',
+    verificationSeal: null, // computed at load
     sealedAt: new Date('2026-03-05T14:30:00Z'),
     startedAt: new Date('2026-03-05T13:00:00Z'),
     completedAt: new Date('2026-03-05T14:30:00Z'),
@@ -164,6 +169,23 @@ const testSessions = [
     completedAt: null,
     createdAt: new Date('2026-03-10T09:00:00Z'),
     updatedAt: new Date('2026-03-10T09:00:00Z'),
+  },
+  {
+    id: 'sess-04',
+    certificateNo: 'NAWI-2026-000401',
+    instrumentId: 'inst-ps-01',
+    conductedById: 'usr-officer-01',
+    status: 'COMPLETED',
+    overallResult: 'FAIL',
+    temperature: 26.0,
+    humidity: 58.0,
+    remarks: 'Periodic reverification. Instrument REJECTED — indicated error at 600 kg (0.45 kg) exceeds the OIML R-76 Class III maximum permissible error of 0.30 kg. Trader directed to withdraw the scale from commercial use pending adjustment.',
+    verificationSeal: null, // computed at load — a FAIL is still authentically sealed
+    sealedAt: new Date('2026-03-14T16:20:00Z'),
+    startedAt: new Date('2026-03-14T15:00:00Z'),
+    completedAt: new Date('2026-03-14T16:20:00Z'),
+    createdAt: new Date('2026-03-14T15:00:00Z'),
+    updatedAt: new Date('2026-03-14T16:20:00Z'),
   },
 ];
 
@@ -228,7 +250,161 @@ const testResults = [
     createdAt: new Date('2026-03-01T11:30:00Z'),
     updatedAt: new Date('2026-03-01T11:30:00Z'),
   },
+  {
+    id: 'res-04',
+    testSessionId: 'sess-02',
+    testType: 'WEIGHING_PERFORMANCE',
+    status: 'COMPLETED',
+    result: 'PASS',
+    data: {
+      points: [
+        { loadPoint: 'L1', appliedLoad: 0, indicatedInc: 0, errorInc: 0, indicatedDec: 0, errorDec: 0, error: 0, mpe: 0.025, status: 'PASS' },
+        { loadPoint: 'L2', appliedLoad: 5, indicatedInc: 5.0, errorInc: 0, indicatedDec: 5.0, errorDec: 0, error: 0, mpe: 0.025, status: 'PASS' },
+        { loadPoint: 'L3', appliedLoad: 25, indicatedInc: 25.0, errorInc: 0, indicatedDec: 25.0, errorDec: 0, error: 0, mpe: 0.025, status: 'PASS' },
+        { loadPoint: 'L4', appliedLoad: 50, indicatedInc: 50.02, errorInc: 0.02, indicatedDec: 50.02, errorDec: 0.02, error: 0.02, mpe: 0.05, status: 'PASS' },
+        { loadPoint: 'L5', appliedLoad: 100, indicatedInc: 100.03, errorInc: 0.03, indicatedDec: 100.02, errorDec: 0.02, error: 0.03, mpe: 0.05, status: 'PASS' },
+        { loadPoint: 'L6', appliedLoad: 150, indicatedInc: 150.05, errorInc: 0.05, indicatedDec: 150.04, errorDec: 0.04, error: 0.05, mpe: 0.075, status: 'PASS' },
+      ],
+    },
+    calculations: { maxCorrectedError: 0.05, maxMpeAllowed: 0.075, overallVerdict: 'PASS' },
+    remarks: 'Weighing performance across the full span conforms to Class III tolerances.',
+    createdAt: new Date('2026-03-05T13:30:00Z'),
+    updatedAt: new Date('2026-03-05T13:30:00Z'),
+  },
+  {
+    id: 'res-05',
+    testSessionId: 'sess-02',
+    testType: 'REPEATABILITY',
+    status: 'COMPLETED',
+    result: 'PASS',
+    data: {
+      series: [
+        { run: 1, load: 75, indicated: 75.02, error: 0.02 },
+        { run: 2, load: 75, indicated: 75.02, error: 0.02 },
+        { run: 3, load: 75, indicated: 75.03, error: 0.03 },
+      ],
+    },
+    calculations: { maxDifference: 0.01, allowableMpe: 0.05, overallVerdict: 'PASS' },
+    remarks: 'Repeatability at 50% of maximum capacity within tolerance.',
+    createdAt: new Date('2026-03-05T14:00:00Z'),
+    updatedAt: new Date('2026-03-05T14:00:00Z'),
+  },
+  {
+    id: 'res-06',
+    testSessionId: 'sess-02',
+    testType: 'ECCENTRICITY',
+    status: 'COMPLETED',
+    result: 'PASS',
+    data: {
+      positions: [
+        { position: 'Center', load: 50, indicated: 50.0, error: 0, mpe: 0.05, status: 'PASS' },
+        { position: 'Front-Left', load: 50, indicated: 50.02, error: 0.02, mpe: 0.05, status: 'PASS' },
+        { position: 'Front-Right', load: 50, indicated: 50.02, error: 0.02, mpe: 0.05, status: 'PASS' },
+        { position: 'Back-Left', load: 50, indicated: 50.01, error: 0.01, mpe: 0.05, status: 'PASS' },
+        { position: 'Back-Right', load: 50, indicated: 50.02, error: 0.02, mpe: 0.05, status: 'PASS' },
+      ],
+    },
+    calculations: { maxError: 0.02, mpeAllowed: 0.05, overallVerdict: 'PASS' },
+    remarks: 'Off-centre loading test passed at all four quadrants.',
+    createdAt: new Date('2026-03-05T14:15:00Z'),
+    updatedAt: new Date('2026-03-05T14:15:00Z'),
+  },
+  // ---- sess-04: deliberate MPE breach, demonstrating the rejection path ----
+  {
+    id: 'res-07',
+    testSessionId: 'sess-04',
+    testType: 'WEIGHING_PERFORMANCE',
+    status: 'COMPLETED',
+    result: 'FAIL',
+    data: {
+      points: [
+        { loadPoint: 'L1', appliedLoad: 0, indicatedInc: 0, errorInc: 0, indicatedDec: 0, errorDec: 0, error: 0, mpe: 0.1, status: 'PASS' },
+        { loadPoint: 'L2', appliedLoad: 60, indicatedInc: 60.0, errorInc: 0, indicatedDec: 60.0, errorDec: 0, error: 0, mpe: 0.1, status: 'PASS' },
+        { loadPoint: 'L3', appliedLoad: 100, indicatedInc: 100.05, errorInc: 0.05, indicatedDec: 100.05, errorDec: 0.05, error: 0.05, mpe: 0.1, status: 'PASS' },
+        { loadPoint: 'L4', appliedLoad: 200, indicatedInc: 200.15, errorInc: 0.15, indicatedDec: 200.15, errorDec: 0.15, error: 0.15, mpe: 0.2, status: 'PASS' },
+        { loadPoint: 'L5', appliedLoad: 400, indicatedInc: 400.35, errorInc: 0.35, indicatedDec: 400.3, errorDec: 0.3, error: 0.35, mpe: 0.2, status: 'FAIL' },
+        { loadPoint: 'L6', appliedLoad: 600, indicatedInc: 600.45, errorInc: 0.45, indicatedDec: 600.4, errorDec: 0.4, error: 0.45, mpe: 0.3, status: 'FAIL' },
+      ],
+    },
+    calculations: { maxCorrectedError: 0.45, maxMpeAllowed: 0.3, overallVerdict: 'FAIL' },
+    remarks: 'Progressive positive span error. Error exceeds MPE from 2000 e upward — the instrument over-reads at high load, systematically overcharging traders.',
+    createdAt: new Date('2026-03-14T15:30:00Z'),
+    updatedAt: new Date('2026-03-14T15:30:00Z'),
+  },
+  {
+    id: 'res-08',
+    testSessionId: 'sess-04',
+    testType: 'ECCENTRICITY',
+    status: 'COMPLETED',
+    result: 'PASS',
+    data: {
+      positions: [
+        { position: 'Center', load: 200, indicated: 200.15, error: 0.15, mpe: 0.2, status: 'PASS' },
+        { position: 'Front-Left', load: 200, indicated: 200.18, error: 0.18, mpe: 0.2, status: 'PASS' },
+        { position: 'Front-Right', load: 200, indicated: 200.17, error: 0.17, mpe: 0.2, status: 'PASS' },
+        { position: 'Back-Left', load: 200, indicated: 200.16, error: 0.16, mpe: 0.2, status: 'PASS' },
+        { position: 'Back-Right', load: 200, indicated: 200.18, error: 0.18, mpe: 0.2, status: 'PASS' },
+      ],
+    },
+    calculations: { maxError: 0.18, mpeAllowed: 0.2, overallVerdict: 'PASS' },
+    remarks: 'Eccentricity acceptable — the defect is a span/linearity fault, not a load-cell imbalance.',
+    createdAt: new Date('2026-03-14T16:00:00Z'),
+    updatedAt: new Date('2026-03-14T16:00:00Z'),
+  },
+  // ---- sess-03: partially entered, left for an evaluator to finish ----
+  {
+    id: 'res-09',
+    testSessionId: 'sess-03',
+    testType: 'REPEATABILITY',
+    status: 'IN_PROGRESS',
+    result: null,
+    data: {
+      series: [
+        { run: 1, load: 100, indicated: 100.0002, error: 0.0002 },
+        { run: 2, load: 100, indicated: 100.0003, error: 0.0003 },
+      ],
+    },
+    calculations: null,
+    remarks: 'Two of three runs recorded; third run pending.',
+    createdAt: new Date('2026-03-10T09:30:00Z'),
+    updatedAt: new Date('2026-03-10T09:30:00Z'),
+  },
 ];
+
+/**
+ * Compute an authentic HMAC-SHA256 verification seal for every sealed demo session.
+ *
+ * These used to be hardcoded placeholder hex strings (one was literally the SHA-256
+ * of the empty string), so the public verification endpoint recomputed the canonical
+ * HMAC, found a mismatch, and reported the portal's own flagship demo certificate as
+ * status "TAMPERED" / valid:false — the worst possible outcome for a project whose
+ * entire pitch is evidentiary trust.
+ *
+ * The payload shape below MUST stay identical to the one assembled in
+ * `reports.controller.js -> verifyCertificate`, or verification breaks again.
+ */
+function computeAndAssignSeals() {
+  for (const session of testSessions) {
+    if (session.status !== 'COMPLETED') continue;
+
+    const inst = instruments.find((i) => i.id === session.instrumentId);
+    const officer = users.find((u) => u.id === session.conductedById);
+    if (!inst) continue;
+
+    const rawDate = session.completedAt || session.createdAt || new Date();
+    session.verificationSeal = generateVerificationSeal({
+      certificateNo: session.certificateNo,
+      instrumentId: inst.id || inst.serialNumber,
+      status: session.status,
+      verificationDate: rawDate.toISOString(),
+      officerId: officer ? officer.name : '',
+      maxCapacity: inst.maxCapacity,
+      verificationInterval: inst.verificationInterval,
+    });
+  }
+}
+
+computeAndAssignSeals();
 
 const auditLogs = [
   {

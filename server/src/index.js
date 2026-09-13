@@ -1,24 +1,16 @@
-require('dotenv').config();
+// Monorepo-aware environment bootstrap (SEC-CRIT-03).
+// Loads server/.env then the repository-root .env. Missing cryptographic secrets
+// are FATAL in production, and synthesised as random ephemeral values in
+// development so that a freshly cloned repository boots without manual setup.
+const { bootstrapEnv } = require('./lib/bootstrapEnv');
 
-// Enforce mandatory cryptographic secrets on startup (SEC-CRIT-03)
-if (!process.env.JWT_SECRET) {
-  const errMsg = 'FATAL: JWT_SECRET environment variable is required for server startup. Please configure JWT_SECRET in your .env file.';
-  console.error(errMsg);
+try {
+  bootstrapEnv();
+} catch (err) {
   if (require.main === module) {
     process.exit(1);
-  } else {
-    throw new Error(errMsg);
   }
-}
-
-if (!process.env.HMAC_SECRET) {
-  const errMsg = 'FATAL: HMAC_SECRET environment variable is required for digital verification seal engine. Please configure HMAC_SECRET in your .env file.';
-  console.error(errMsg);
-  if (require.main === module) {
-    process.exit(1);
-  } else {
-    throw new Error(errMsg);
-  }
+  throw err;
 }
 
 const express = require('express');
@@ -106,16 +98,42 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json(response);
 });
 
+/**
+ * Boot the HTTP listener. Exported so alternate entry points (server/demo.js)
+ * can start the identical server without duplicating bootstrap logic.
+ * @returns {Promise<import('http').Server>}
+ */
+function startServer() {
+  const prisma = require('./lib/prisma');
+
+  const boot = () =>
+    app.listen(PORT, () => {
+      const mode =
+        String(process.env.NAWI_DB_MODE || '').toLowerCase() === 'memory'
+          ? 'In-Memory Demo Database'
+          : 'PostgreSQL (falls back to in-memory demo data if unreachable)';
+      console.log(`====================================================`);
+      console.log(` NAWI-ReportPro Backend Server is running on port ${PORT}`);
+      console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(` Data source: ${mode}`);
+      console.log(` API Base URL: http://localhost:${PORT}/api`);
+      console.log(` OIML R-76 Verification Engine: Active`);
+      console.log(`====================================================`);
+    });
+
+  // Settle DB connectivity up front so the first login request never eats a
+  // multi-second connection timeout before falling back to the demo database.
+  if (typeof prisma.__probeConnection === 'function') {
+    return prisma.__probeConnection().then(boot, boot);
+  }
+  return Promise.resolve(boot());
+}
+
 // Start Server when run directly
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`====================================================`);
-    console.log(` NAWI-ReportPro Backend Server is running on port ${PORT}`);
-    console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(` API Base URL: http://localhost:${PORT}/api`);
-    console.log(` OIML R-76 Verification Engine: Active`);
-    console.log(`====================================================`);
-  });
+  startServer();
 }
 
 module.exports = app;
+module.exports.startServer = startServer;
+

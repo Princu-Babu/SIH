@@ -1,11 +1,12 @@
-require('dotenv').config();
+// Guarantees JWT_SECRET is populated even when this module is imported directly
+// (tests, scripts) without going through src/index.js. Idempotent: the first
+// caller in the process fixes the value, so every module shares one secret.
+require('../lib/bootstrapEnv').bootstrapEnv({ silent: true });
+
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is missing. Authentication middleware cannot function securely without a configured JWT_SECRET.');
-}
 
 /**
  * Middleware to verify JWT bearer token and attach active user to request

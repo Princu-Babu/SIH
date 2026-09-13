@@ -1,11 +1,11 @@
-require('dotenv').config();
+// Guarantees HMAC_SECRET is populated even when the seal engine is imported
+// directly (tests, seeding, scripts) without going through src/index.js.
+require('../lib/bootstrapEnv').bootstrapEnv({ silent: true });
+
 const crypto = require('crypto');
 const { getMPE, calculateIndicationAndError, calculateMultiIntervalMPE } = require('./mpeCalculator');
 
 const DEFAULT_SECRET = process.env.HMAC_SECRET;
-if (!DEFAULT_SECRET) {
-  throw new Error('FATAL: HMAC_SECRET environment variable is missing. Cryptographic seal engine requires a configured HMAC_SECRET.');
-}
 
 /**
  * Normalize and canonicalize session verification fields into deterministic string

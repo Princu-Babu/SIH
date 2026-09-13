@@ -120,11 +120,21 @@ describe('Milestone R4: Monorepo Scripts, Credentials & PWA Reliability', () => 
       }
     });
 
-    it('R4-TC12: official submission deck should remain in root and duplicates archived', () => {
+    it('R4-TC12: official submission deck should remain in root and duplicates removed', () => {
       expect(fs.existsSync(path.join(rootDir, 'NAWI-ReportPro-SIH2026-Submission.pptx'))).toBe(true);
       expect(fs.existsSync(path.join(rootDir, 'NAWI-ReportPro-SIH2026-Submission.pdf'))).toBe(true);
-      expect(fs.existsSync(path.join(rootDir, 'archive/presentation_decks'))).toBe(true);
-      expect(fs.existsSync(path.join(rootDir, 'NAWI_ReportPro_FIXED.pptx'))).toBe(false);
+
+      // Duplicate/working decks must not sit beside the official submission, or an
+      // evaluator cannot tell which file is the one being submitted.
+      // NOTE: this asserts absence rather than the presence of an `archive/` folder —
+      // `archive/` is listed in .gitignore, so it can never exist in a fresh clone.
+      const duplicateDecks = [
+        'NAWI_ReportPro_FIXED.pptx',
+        'SIH2026-IDEA-Presentation-Format.pptx',
+      ];
+      for (const deck of duplicateDecks) {
+        expect(fs.existsSync(path.join(rootDir, deck))).toBe(false);
+      }
     });
   });
 });

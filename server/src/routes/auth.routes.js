@@ -1,4 +1,7 @@
-require('dotenv').config();
+// Guarantees JWT_SECRET is populated even when these routes are mounted by a
+// test harness that never loads src/index.js. Idempotent across modules.
+require('../lib/bootstrapEnv').bootstrapEnv({ silent: true });
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -15,9 +18,6 @@ const { verifyToken } = require('../middleware/auth');
 const { createAuditLog, getClientIp } = require('../middleware/auditLog');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is missing. Authentication routes cannot function securely without a configured JWT_SECRET.');
-}
 
 // Rate Limiting for Login Route (prevent brute-force password attacks)
 const authLimiter = rateLimit
