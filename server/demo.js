@@ -12,4 +12,11 @@ process.env.NAWI_DB_MODE = 'memory';
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'development';
 }
+
+// Pin the API port. The Vite dev server proxies /api to :5000, so an inherited
+// PORT from the surrounding shell (CI runners, IDE preview harnesses and PaaS
+// shims all set one) would silently move the API out from under the proxy — or
+// collide with the client itself. Override with NAWI_API_PORT if 5000 is taken.
+process.env.PORT = process.env.NAWI_API_PORT || '5000';
+
 require('./src/index.js').startServer();

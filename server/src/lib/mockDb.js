@@ -404,8 +404,6 @@ function computeAndAssignSeals() {
   }
 }
 
-computeAndAssignSeals();
-
 const auditLogs = [
   {
     id: 'aud-01',
@@ -438,6 +436,67 @@ const auditLogs = [
     createdAt: new Date('2026-03-01T12:00:00Z'),
   },
 ];
+
+/**
+ * Slide the entire seeded timeline forward so the newest event always sits a few
+ * days before today.
+ *
+ * The demo dataset is written against fixed calendar dates, which means that a
+ * few months after it was authored the dashboard's rolling-window charts go
+ * empty, "Recent Test Sessions" stops looking recent, and every demo
+ * certificate silently ages past its validity period. An evaluator opening the
+ * portal would conclude the product is broken.
+ *
+ * Every record is shifted by the same whole number of days, so all relative
+ * spacing is preserved exactly — instruments are still registered before the
+ * sessions that test them, results still land mid-session, and the audit trail
+ * still reads in order. Shifting by whole days also preserves the time of day,
+ * so inspections stay during working hours instead of drifting to 03:47.
+ *
+ * Certificate numbers are deliberately NOT rewritten: they are opaque registry
+ * identifiers referenced by QR codes, screenshots and the verification scripts.
+ */
+const DEMO_FRESHNESS_DAYS = 3;
+const DATE_FIELDS = ['createdAt', 'updatedAt', 'startedAt', 'completedAt', 'sealedAt', 'lastCalibration', 'nextCalibration'];
+const ALL_COLLECTIONS = [users, instruments, testSessions, testResults, auditLogs];
+
+function rebaseTimelineToToday() {
+  let newest = -Infinity;
+  for (const collection of ALL_COLLECTIONS) {
+    for (const record of collection) {
+      for (const field of DATE_FIELDS) {
+        const value = record[field];
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          newest = Math.max(newest, value.getTime());
+        }
+      }
+    }
+  }
+  if (!Number.isFinite(newest)) return 0;
+
+  const target = Date.now() - DEMO_FRESHNESS_DAYS * 86400000;
+  const dayMs = 86400000;
+  const offsetDays = Math.round((target - newest) / dayMs);
+  if (offsetDays === 0) return 0;
+
+  const offsetMs = offsetDays * dayMs;
+  for (const collection of ALL_COLLECTIONS) {
+    for (const record of collection) {
+      for (const field of DATE_FIELDS) {
+        const value = record[field];
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          record[field] = new Date(value.getTime() + offsetMs);
+        }
+      }
+    }
+  }
+  return offsetDays;
+}
+
+// Order matters: the seal covers the verification date, so it must be computed
+// only after the timeline has been rebased.
+rebaseTimelineToToday();
+computeAndAssignSeals();
 
 function matchesFilter(item, where = {}) {
   if (!where || Object.keys(where).length === 0) return true;

@@ -32,6 +32,32 @@ import StatusBadge from '../components/shared/StatusBadge';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import EmptyState from '../components/shared/EmptyState';
 
+// Short, officer-legible names for the OIML R-76 test modules.
+const MODULE_LABELS = {
+  WEIGHING_PERFORMANCE: 'Weighing Performance',
+  REPEATABILITY: 'Repeatability',
+  ECCENTRICITY: 'Eccentricity',
+  DISCRIMINATION: 'Discrimination',
+  TARE: 'Tare Device',
+  ZERO_SETTING: 'Zero-Setting',
+  WARM_UP: 'Warm-Up Time',
+  TILTING: 'Tilting',
+};
+
+const formatModuleName = (value) =>
+  String(value || 'Unspecified')
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+/**
+ * Never render a placeholder figure that could be mistaken for a real one.
+ * Until the API answers, a KPI shows an em dash rather than an invented number.
+ */
+const metric = (loading, value) => (loading ? '—' : value ?? 0);
+
 export default function DashboardPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -47,7 +73,8 @@ export default function DashboardPage() {
         pendingTests: stats.inProgressTests ?? stats.pendingTests ?? 0,
         completedTests: stats.completedTests ?? 0,
         failedTests: stats.failedTests ?? 0,
-        complianceRate: stats.passRate ?? stats.complianceRate ?? 100,
+        complianceRate: stats.passRate ?? stats.complianceRate ?? 0,
+        testsByModule: Array.isArray(stats.testsByModule) ? stats.testsByModule : [],
       };
     },
   });
@@ -57,8 +84,15 @@ export default function DashboardPage() {
     queryKey: ['recent-sessions'],
     queryFn: async () => {
       const res = await apiClient.get('/dashboard/recent');
-      const raw = res.data?.data?.recentSessions || res.data?.data || res.data?.sessions || (Array.isArray(res.data) ? res.data : []);
-      return raw.map((s) => ({
+      // `recentSessions` is the key this API actually returns; the other shapes
+      // are tolerated for older/proxied deployments.
+      const raw =
+        res.data?.recentSessions ||
+        res.data?.data?.recentSessions ||
+        res.data?.data ||
+        res.data?.sessions ||
+        (Array.isArray(res.data) ? res.data : []);
+      return (Array.isArray(raw) ? raw : []).map((s) => ({
         ...s,
         certificateNumber: s.certificateNo || s.certificateNumber,
         testDate: s.startedAt || s.createdAt || s.testDate,
@@ -68,32 +102,33 @@ export default function DashboardPage() {
     },
   });
 
-  // Monthly verification chart data — derived from actual recent sessions
-  const monthlyData = useMemo(() => {
-    if (!recentSessions || recentSessions.length === 0) return [];
-    const monthMap = {};
-    recentSessions.forEach((s) => {
-      const d = new Date(s.testDate);
-      if (isNaN(d)) return;
-      const key = d.toLocaleString('en', { month: 'short' });
-      if (!monthMap[key]) monthMap[key] = { month: key, passed: 0, failed: 0 };
-      if (s.overallVerdict === 'PASS' || s.overallVerdict === 'COMPLETED') monthMap[key].passed++;
-      else if (s.overallVerdict === 'FAIL') monthMap[key].failed++;
-      else monthMap[key].passed++; // default pending to passed for display
-    });
-    return Object.values(monthMap);
-  }, [recentSessions]);
+  // Month-by-month compliance, aggregated server-side over a real 6-month
+  // window rather than inferred from whatever sessions happen to be recent.
+  const { data: trendsData, isLoading: isTrendsLoading } = useQuery({
+    queryKey: ['dashboard-trends'],
+    queryFn: async () => {
+      const res = await apiClient.get('/dashboard/trends?months=6');
+      return {
+        trends: Array.isArray(res.data?.trends) ? res.data.trends : [],
+        totals: res.data?.totals || null,
+        months: res.data?.months ?? 6,
+      };
+    },
+  });
 
-  // Test distribution — derived from actual session count by status
+  const monthlyData = trendsData?.trends ?? [];
+  const avgPassRate = trendsData?.totals?.passRate;
+
+  // Genuine OIML R-76 module execution counts.
   const testDistributionData = useMemo(() => {
-    if (!statsData) return [];
-    const colors = ['#2563eb', '#1d4ed8', '#FF9933', '#138808'];
-    return [
-      { name: 'Completed', value: statsData.completedTests || 0, color: colors[0] },
-      { name: 'In Progress', value: statsData.pendingTests || 0, color: colors[1] },
-      { name: 'Failed', value: statsData.failedTests || 0, color: colors[2] },
-      { name: 'Registered Instruments', value: statsData.totalInstruments || 0, color: colors[3] },
-    ].filter((d) => d.value > 0);
+    const palette = ['#2563eb', '#0d9488', '#FF9933', '#138808', '#7c3aed', '#dc2626'];
+    return (statsData?.testsByModule ?? [])
+      .filter((m) => (m.count || 0) > 0)
+      .map((m, i) => ({
+        name: MODULE_LABELS[m.testType] || formatModuleName(m.testType),
+        value: m.count,
+        color: palette[i % palette.length],
+      }));
   }, [statsData]);
 
   return (
@@ -127,28 +162,32 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title={t('dashboard.totalInstruments', 'Total Instruments')}
-          value={statsData?.totalInstruments ?? 24}
+          value={metric(isStatsLoading, statsData?.totalInstruments)}
           icon={FiCpu}
           color="blue"
           subtitle={`${t('dashboard.activeInstruments', 'Active in Registry')}`}
         />
         <StatCard
           title={t('dashboard.pendingTests', 'Pending Tests')}
-          value={statsData?.pendingTests ?? 5}
+          value={metric(isStatsLoading, statsData?.pendingTests)}
           icon={FiClock}
           color="yellow"
           subtitle="Verification In Progress"
         />
         <StatCard
           title={t('dashboard.completedTests', 'Completed Tests')}
-          value={statsData?.completedTests ?? 42}
+          value={metric(isStatsLoading, statsData?.completedTests)}
           icon={FiCheckCircle}
           color="green"
-          subtitle={`${statsData?.complianceRate || 93.3}% ${t('dashboard.passRate', 'Pass Rate')}`}
+          subtitle={
+            isStatsLoading
+              ? t('common.loading', 'Loading…')
+              : `${statsData?.complianceRate ?? 0}% ${t('dashboard.passRate', 'Pass Rate')}`
+          }
         />
         <StatCard
           title={t('dashboard.failedTests', 'Failed Tests')}
-          value={statsData?.failedTests ?? 3}
+          value={metric(isStatsLoading, statsData?.failedTests)}
           icon={FiAlertOctagon}
           color="red"
           subtitle="OIML R-76 Tolerance Exceeded"
@@ -164,11 +203,27 @@ export default function DashboardPage() {
               <h2 className="text-sm font-bold text-slate-900">
                 {t('dashboard.complianceRate', 'Monthly Compliance & Verification Rate')}
               </h2>
-              <p className="text-xs text-slate-500">Passed vs Failed sessions over the last 6 months</p>
+              <p className="text-xs text-slate-500">
+                Concluded verifications over the last {trendsData?.months ?? 6} months
+              </p>
             </div>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-              93.3% Avg Pass
-            </span>
+            {avgPassRate === null || avgPassRate === undefined ? (
+              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                {isTrendsLoading ? 'Loading…' : 'No data'}
+              </span>
+            ) : (
+              <span
+                className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                  avgPassRate >= 90
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    : avgPassRate >= 70
+                      ? 'text-amber-700 bg-amber-50 border-amber-200'
+                      : 'text-red-700 bg-red-50 border-red-200'
+                }`}
+              >
+                {avgPassRate}% Avg Pass
+              </span>
+            )}
           </div>
 
           <div className="h-64 w-full min-h-[256px]">
@@ -176,13 +231,14 @@ export default function DashboardPage() {
               <BarChart data={monthlyData} key={JSON.stringify(monthlyData)} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: '6px', fontSize: '12px' }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
                 <Bar dataKey="passed" name="Passed (Compliant)" fill="#2563eb" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="failed" name="Failed (Out of Spec)" fill="#dc2626" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="inProgress" name="Still In Progress" fill="#94a3b8" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -195,35 +251,44 @@ export default function DashboardPage() {
               <h2 className="text-sm font-bold text-slate-900">
                 {t('dashboard.testDistribution', 'Tests Conducted by Category')}
               </h2>
-              <p className="text-xs text-slate-500">Breakdown across 6 standard OIML R-76 modules</p>
+              <p className="text-xs text-slate-500">
+                Individual OIML R-76 test modules executed across all sessions
+              </p>
             </div>
             <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-              6 Test Modules
+              {testDistributionData.length} {testDistributionData.length === 1 ? 'Module' : 'Modules'}
             </span>
           </div>
 
           <div className="h-64 w-full flex items-center justify-center min-h-[256px]">
-            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
-              <PieChart>
-                <Pie
-                  data={testDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {testDistributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: '6px', fontSize: '12px' }}
-                />
-                <Legend iconType="circle" layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }} />
-              </PieChart>
-            </ResponsiveContainer>
+            {testDistributionData.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                {isStatsLoading ? 'Loading…' : 'No test modules recorded yet.'}
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+                <PieChart>
+                  <Pie
+                    data={testDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {testDistributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value, name) => [`${value} test${value === 1 ? '' : 's'}`, name]}
+                    contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: '6px', fontSize: '12px' }}
+                  />
+                  <Legend iconType="circle" layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>

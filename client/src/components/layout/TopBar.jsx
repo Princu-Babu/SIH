@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   FiBell,
   FiChevronDown,
@@ -21,11 +23,28 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOfflineSync } from '../../hooks/useOfflineSync';
+import apiClient from '../../hooks/useApi';
 import StateEmblem from '../common/StateEmblem';
+
+/** "10m ago" / "3d ago" for a timestamp, in whichever unit reads best. */
+function relativeTime(value) {
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then)) return '';
+  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(value).toLocaleDateString();
+}
 
 export default function TopBar({ onToggleSidebar }) {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const { isOnline, pendingCount, isSyncing, lastSyncTime, triggerSync } = useOfflineSync();
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -41,39 +60,71 @@ export default function TopBar({ onToggleSidebar }) {
     return localStorage.getItem('gigw_high_contrast') === 'true';
   });
 
-  // Notifications State
-  const [notifications, setNotifications] = useState([
-    {
-      id: 'notif-1',
-      type: 'warning',
-      title: 'Verification Renewal Due',
-      titleHi: 'सत्यापन नवीनीकरण देय',
-      message: 'Weighbridge #WB-DEL-042 verification expires in 7 days.',
-      messageHi: 'वेब्रिज #WB-DEL-042 का सत्यापन 7 दिनों में समाप्त हो रहा है।',
-      time: '10m ago',
-      unread: true,
+  // Notification feed, derived from live verification data.
+  //
+  // These were previously three hardcoded alerts naming instruments and
+  // sessions ("Weighbridge #WB-DEL-042", "TS-2026-089") that exist nowhere in
+  // the database. An officer clicking through to act on one would find nothing,
+  // and an evaluator checking the reference would find it fabricated.
+  const [readAlertIds, setReadAlertIds] = useState(() => new Set());
+
+  const { data: alertFeed = [] } = useQuery({
+    queryKey: ['topbar-alerts'],
+    enabled: Boolean(user),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await apiClient.get('/dashboard/recent');
+      const sessions = Array.isArray(res.data?.recentSessions) ? res.data.recentSessions : [];
+      const alerts = [];
+
+      for (const s of sessions) {
+        const instrumentName = s.instrument?.name || s.instrument?.model || 'instrument';
+        const serial = s.instrument?.serialNumber ? ` (${s.instrument.serialNumber})` : '';
+        const when = s.completedAt || s.startedAt || s.createdAt;
+
+        if (s.status === 'COMPLETED' && s.overallResult === 'FAIL') {
+          alerts.push({
+            id: `fail-${s.id}`,
+            type: 'warning',
+            title: 'Instrument Rejected — MPE Exceeded',
+            titleHi: 'उपकरण अस्वीकृत — अधिकतम अनुज्ञेय त्रुटि से अधिक',
+            message: `${instrumentName}${serial} failed verification under certificate ${s.certificateNo}.`,
+            messageHi: `${instrumentName}${serial} प्रमाणपत्र ${s.certificateNo} के अंतर्गत सत्यापन में विफल रहा।`,
+            time: relativeTime(when),
+            href: `/tests/${s.id}`,
+          });
+        } else if (s.status === 'IN_PROGRESS') {
+          alerts.push({
+            id: `open-${s.id}`,
+            type: 'info',
+            title: 'Verification Still Open',
+            titleHi: 'सत्यापन अभी जारी है',
+            message: `${instrumentName}${serial} has an unfinished session (${s.certificateNo}).`,
+            messageHi: `${instrumentName}${serial} का सत्र अपूर्ण है (${s.certificateNo})।`,
+            time: relativeTime(when),
+            href: `/tests/${s.id}`,
+          });
+        }
+      }
+
+      if (alerts.length === 0) {
+        alerts.push({
+          id: 'all-clear',
+          type: 'success',
+          title: 'All Verifications Compliant',
+          titleHi: 'सभी सत्यापन अनुपालन में हैं',
+          message: 'No instrument is currently outside OIML R-76 tolerance.',
+          messageHi: 'वर्तमान में कोई भी उपकरण OIML R-76 सहिष्णुता से बाहर नहीं है।',
+          time: relativeTime(Date.now()),
+          href: '/tests',
+        });
+      }
+
+      return alerts;
     },
-    {
-      id: 'notif-2',
-      type: 'success',
-      title: 'Resilient Cloud Sync',
-      titleHi: 'क्लाउड सिंक पूर्ण',
-      message: 'All local mandi test sessions auto-committed to PostgreSQL.',
-      messageHi: 'सभी स्थानीय मंडी परीक्षण सत्र पोस्टग्रेएसक्यूएल में सिंक हो गए।',
-      time: '45m ago',
-      unread: true,
-    },
-    {
-      id: 'notif-3',
-      type: 'info',
-      title: 'OIML R-76 Tolerance Check',
-      titleHi: 'OIML R-76 सहिष्णुता सूचना',
-      message: 'Test Session TS-2026-089 hysteresis recorded within allowable 0.5e MPE.',
-      messageHi: 'परीक्षण सत्र TS-2026-089 हिस्टैरिसीस स्वीकार्य 0.5e एमईपी के भीतर है।',
-      time: '2h ago',
-      unread: true,
-    },
-  ]);
+  });
+
+  const notifications = alertFeed.map((n) => ({ ...n, unread: !readAlertIds.has(n.id) }));
 
   const userDropdownRef = useRef(null);
   const langDropdownRef = useRef(null);
@@ -141,13 +192,16 @@ export default function TopBar({ onToggleSidebar }) {
   };
 
   const markAllNotificationsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+    setReadAlertIds(new Set(alertFeed.map((n) => n.id)));
   };
 
   const toggleNotificationRead = (id) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: !n.unread } : n))
-    );
+    setReadAlertIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const unreadNotifCount = notifications.filter((n) => n.unread).length;
@@ -272,9 +326,9 @@ export default function TopBar({ onToggleSidebar }) {
       {/* ========================================================================= */}
       {/* 2. MAIN BRANDING & APP HEADER                                             */}
       {/* ========================================================================= */}
-      <div className="flex items-center justify-between px-4 lg:px-6 py-2.5">
+      <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2.5">
         {/* Left Side: Mobile Menu Button + Official State Emblem + Ministry Bilingual Banner */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={onToggleSidebar}
@@ -285,9 +339,9 @@ export default function TopBar({ onToggleSidebar }) {
           </button>
 
           {/* Official State Emblem of India (Ashoka Lion Capital with Satyameva Jayate) */}
-          <StateEmblem size="sm" color="#1e3a5f" className="hidden xs:inline-flex" />
+          <StateEmblem size="sm" color="#1e3a5f" className="hidden xs:inline-flex shrink-0" />
 
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-base sm:text-lg font-extrabold text-[#1e3a5f] tracking-tight">
                 NAWI-ReportPro
@@ -297,20 +351,24 @@ export default function TopBar({ onToggleSidebar }) {
               </span>
             </div>
 
-            {/* Official Ministry Bilingual Hierarchy Banner */}
-            <div className="text-slate-600 leading-tight mt-0.5">
-              <p className="text-[11px] font-semibold text-slate-800 hidden md:block">
-                उपभोक्ता मामले, खाद्य और सार्वजनिक वितरण मंत्रालय • Ministry of Consumer Affairs, Food & Public Distribution
+            {/* Official Ministry Bilingual Hierarchy Banner.
+                Devanagari above Latin on separate lines, per Government of India
+                portal convention. Kept on one line each and truncated rather
+                than wrapped: reflowing the ministry name mid-phrase pushed the
+                division line into the header border. */}
+            <div className="text-slate-600 leading-tight mt-0.5 min-w-0 hidden md:block">
+              <p className="text-[11px] font-semibold text-slate-800 truncate">
+                उपभोक्ता मामले, खाद्य और सार्वजनिक वितरण मंत्रालय • विधिक मापविज्ञान प्रभाग
               </p>
-              <p className="text-[10px] text-slate-500 font-medium hidden sm:block">
-                विधिक मापविज्ञान प्रभाग • Legal Metrology Division
+              <p className="text-[10px] text-slate-500 font-medium truncate">
+                Ministry of Consumer Affairs, Food &amp; Public Distribution • Legal Metrology Division
               </p>
             </div>
           </div>
         </div>
 
         {/* Right Side: Connectivity & Sync + Language Selector + Notifications + User Menu */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Live Connectivity & Sync Queue Badge */}
           <div className="relative" ref={syncDropdownRef}>
             <button
@@ -506,8 +564,25 @@ export default function TopBar({ onToggleSidebar }) {
                     notifications.map((notif) => (
                       <div
                         key={notif.id}
-                        onClick={() => toggleNotificationRead(notif.id)}
-                        className={`p-3 text-xs cursor-pointer transition-colors flex items-start gap-2.5 ${
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          toggleNotificationRead(notif.id);
+                          if (notif.href) {
+                            setNotifDropdownOpen(false);
+                            navigate(notif.href);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter' && e.key !== ' ') return;
+                          e.preventDefault();
+                          toggleNotificationRead(notif.id);
+                          if (notif.href) {
+                            setNotifDropdownOpen(false);
+                            navigate(notif.href);
+                          }
+                        }}
+                        className={`p-3 text-xs cursor-pointer transition-colors flex items-start gap-2.5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 ${
                           notif.unread ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-slate-50 opacity-80'
                         }`}
                       >
